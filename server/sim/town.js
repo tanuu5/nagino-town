@@ -360,6 +360,15 @@ export class Town {
 
   pickUpWallet(r) {
     if (!this.wallet || this.wallet.holder) return;
+    if (this.wallet.owner === r.name) {
+      // 持ち主本人が見つけた：中身ごと取り戻す
+      r.coins += this.wallet.coins;
+      this.perceive(r, `広場で、自分が落とした財布を見つけた（${this.wallet.coins}コイン、中身は無事）`, { memory: 6 });
+      this.log({ kind: "event", who: r.name, place: "広場", text: `${r.short}が自分の落とした財布を見つけた` });
+      this.publicLine(`${r.short}が広場で落とした財布を見つけた`);
+      this.wallet = null;
+      return;
+    }
     this.wallet.holder = r.name;
     r.items["財布"] = 1;
     this.perceive(r, `広場で財布を拾った。中に${this.wallet.coins}コイン。持ち主は分からない`, { memory: 7 });
@@ -581,7 +590,6 @@ export class Town {
     switch (v.action) {
       case "move":
         if (!placeNames.includes(v.target)) errs.push(`move の target は場所名（${placeNames.join("・")}）`);
-        else if (v.target === r.loc) errs.push("いまいる場所への move はできない（その場にいるなら wait）");
         else if (this.isClosed(v.target)) errs.push(`${v.target}は今は入れない`);
         break;
       case "talk":
@@ -666,6 +674,11 @@ export class Town {
     const bk = this.w.bakery;
     switch (v.action) {
       case "move": {
+        if (v.target === r.loc) {
+          // いまいる場所への移動は「その場にいる」と同じ（再試行の費用を使わない）
+          r.activity = "wait";
+          return { ok: true, text: `${s}は${r.loc}にとどまった`, desc: `${r.loc}で過ごす` };
+        }
         if (this.isClosed(v.target)) return { ok: false, text: `${s}は${v.target}へ行こうとしたが、入れなかった`, desc: "様子を見る" };
         const from = r.loc;
         r.loc = v.target;

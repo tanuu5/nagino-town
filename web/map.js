@@ -209,7 +209,7 @@ export class TownMap {
     const cols = 4;
     const col = idx % cols;
     const row = Math.floor(idx / cols);
-    return { x: x + 40 + col * ((w - 80) / (cols - 1 || 1)), y: y + 70 + row * 44 };
+    return { x: x + 40 + col * ((w - 80) / (cols - 1 || 1)), y: y + 66 + row * 58 };
   }
 
   doorKey(name, loc) {
