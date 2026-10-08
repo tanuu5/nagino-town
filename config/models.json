@@ -1,17 +1,106 @@
 {
   "_note": "役割ごとのモデル。thinking が null なら送らない（モデルの既定のまま）。timeout_ms は1回の待ち時間（長い出力が途中で切れて再送され、費用が二重にかかるのを避けるため役割ごとに決める）。overrides で住人ごとに action と talk を上書きできる。",
   "roles": {
-    "action": { "label": "行動の決定", "model": "claude-haiku-5-5", "effort": "low", "thinking": { "type": "disabled" }, "max_tokens": 1024, "timeout_ms": 60000 },
-    "talk": { "label": "会話の一言", "model": "claude-haiku-5-5", "effort": "low", "thinking": { "type": "disabled" }, "max_tokens": 1024, "timeout_ms": 60000 },
-    "reflection": { "label": "1日の振り返り", "model": "claude-sonnet-5-5", "effort": "medium", "thinking": null, "max_tokens": 16000, "timeout_ms": 300000 },
-    "newspaper": { "label": "町の新聞", "model": "claude-opus-5-5", "effort": "medium", "thinking": null, "max_tokens": 16000, "timeout_ms": 600000 }
+    "action": {
+      "label": "行動の決定",
+      "model": "claude-haiku-5-5",
+      "effort": "low",
+      "thinking": {
+        "type": "disabled"
+      },
+      "max_tokens": 1024,
+      "timeout_ms": 60000
+    },
+    "talk": {
+      "label": "会話の一言",
+      "model": "claude-haiku-5-5",
+      "effort": "low",
+      "thinking": {
+        "type": "disabled"
+      },
+      "max_tokens": 1024,
+      "timeout_ms": 60000
+    },
+    "reflection": {
+      "label": "1日の振り返り",
+      "model": "claude-sonnet-5-5",
+      "effort": "medium",
+      "thinking": null,
+      "max_tokens": 16000,
+      "timeout_ms": 300000
+    },
+    "newspaper": {
+      "label": "町の新聞",
+      "model": "claude-opus-5-5",
+      "effort": "medium",
+      "thinking": null,
+      "max_tokens": 16000,
+      "timeout_ms": 600000
+    }
   },
   "overrides": {},
   "_overrides_example": {
     "鳴海トキ": {
-      "action": { "model": "claude-sonnet-5-5", "effort": "low", "thinking": { "type": "between_tools" }, "max_tokens": 4096 },
-      "talk": { "model": "claude-sonnet-5-5", "effort": "low", "thinking": { "type": "between_tools" }, "max_tokens": 4096 }
+      "action": {
+        "model": "claude-sonnet-5-5",
+        "effort": "low",
+        "thinking": {
+          "type": "between_tools"
+        },
+        "max_tokens": 4096
+      },
+      "talk": {
+        "model": "claude-sonnet-5-5",
+        "effort": "low",
+        "thinking": {
+          "type": "between_tools"
+        },
+        "max_tokens": 4096
+      }
     }
   },
-  "client": { "max_retries": 2, "timeout_ms": 120000, "concurrency": 4 }
+  "_presets_note": "フェーズ4のモデル比較用。起動時に環境変数 MODEL_PRESET=all-sonnet などで選ぶと、住人全員の action と talk をこの設定で上書きする（振り返りと新聞は変えない）。",
+  "presets": {
+    "all-sonnet": {
+      "action": {
+        "model": "claude-sonnet-5-5",
+        "effort": "low",
+        "thinking": {
+          "type": "between_tools"
+        },
+        "max_tokens": 2048,
+        "timeout_ms": 120000
+      },
+      "talk": {
+        "model": "claude-sonnet-5-5",
+        "effort": "low",
+        "thinking": {
+          "type": "between_tools"
+        },
+        "max_tokens": 2048,
+        "timeout_ms": 120000
+      }
+    },
+    "all-opus": {
+      "action": {
+        "model": "claude-opus-5-5",
+        "effort": "low",
+        "thinking": null,
+        "max_tokens": 8000,
+        "timeout_ms": 180000
+      },
+      "talk": {
+        "model": "claude-opus-5-5",
+        "effort": "low",
+        "thinking": null,
+        "max_tokens": 8000,
+        "timeout_ms": 180000
+      }
+    }
+  },
+  "client": {
+    "max_retries": 2,
+    "timeout_ms": 120000,
+    "concurrency": 4
+  }
 }

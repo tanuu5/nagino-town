@@ -85,6 +85,42 @@ export function loadConfig() {
   return { characters, world, models, pricing, budget, derived };
 }
 
+/**
+ * 起動時の指定（環境変数）を反映する。設定ファイルは書き換えない。
+ * - MODEL_PRESET：models.json の presets から選び、住人全員の action と talk を上書きする
+ * - RUN_CAP_USD：この起動での run の上限（0 より大きく 50 以下）
+ * 反映した内容を返す（run の meta.json に残すため）
+ */
+export function applyRuntimeOverrides(cfg, env) {
+  const info = {};
+  const preset = env.MODEL_PRESET || "";
+  if (preset) {
+    const p = cfg.models.presets && cfg.models.presets[preset];
+    if (!p) fail(`MODEL_PRESET「${preset}」は models.json の presets にありません`);
+    for (const name of cfg.derived.names) {
+      cfg.models.overrides[name] = { ...(cfg.models.overrides[name] || {}), ...p };
+      for (const role of ["action", "talk"]) {
+        if (p[role]) checkRoleConfig(`presets.${preset}.${role}`, { ...cfg.models.roles[role], ...p[role] }, cfg.pricing);
+      }
+    }
+    info.model_preset = preset;
+  }
+  if (env.RUN_CAP_USD) {
+    const cap = Number(env.RUN_CAP_USD);
+    if (!(cap > 0 && cap <= 50)) fail("RUN_CAP_USD は 0 より大きく 50 以下にしてください");
+    cfg.budget.run_cap_usd = cap;
+    info.run_cap_usd = cap;
+  }
+  info.effective_roles = {
+    action: roleConfigFor(cfg, "action", cfg.derived.names[0]),
+    talk: roleConfigFor(cfg, "talk", cfg.derived.names[0]),
+    reflection: cfg.models.roles.reflection,
+    newspaper: cfg.models.roles.newspaper,
+  };
+  info.run_cap_usd = cfg.budget.run_cap_usd;
+  return info;
+}
+
 /** 住人と役割から、実際に使う呼び出し設定を返す（上書きを反映） */
 export function roleConfigFor(cfg, role, residentName) {
   const base = cfg.models.roles[role];

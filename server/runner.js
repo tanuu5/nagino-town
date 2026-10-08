@@ -40,7 +40,8 @@ class LazyRecorder {
 }
 
 export class Runner {
-  constructor({ cfg, mode, modeNote, ledger, broadcast, mockLatency, mockInvalidRate }) {
+  constructor({ cfg, mode, modeNote, ledger, broadcast, mockLatency, mockInvalidRate, runtime = {} }) {
+    this.runtime = runtime;
     this.cfg = cfg;
     this.mode = mode;
     this.modeNote = modeNote;
@@ -58,7 +59,8 @@ export class Runner {
   }
 
   newTown() {
-    this.rec = new LazyRecorder({ kind: "sim", mode: this.mode, extraMeta: { seed: this.cfg.world.seed } });
+    // 起動時の指定（モデルのプリセット・run の上限）は config のスナップショットに出ないので meta.json に残す
+    this.rec = new LazyRecorder({ kind: "sim", mode: this.mode, extraMeta: { seed: this.cfg.world.seed, runtime: this.runtime } });
     this.gw = new LlmGateway({
       cfg: this.cfg,
       mode: this.mode,

@@ -5,7 +5,7 @@
 //   npm run probe -- --yes --role=reflection   … Sonnet 5.5 の振り返りを1回（数セント）
 //   npm run probe -- --yes --role=newspaper    … Opus 5.5 の新聞を1回（数セント〜$0.4 以下）
 // 記録は runs/（日時）/ と ledger/ledger.jsonl に残る。キーの値は表示しない。
-import { loadConfig, roleConfigFor } from "../server/config.js";
+import { loadConfig, roleConfigFor, applyRuntimeOverrides } from "../server/config.js";
 import { hasApiKey, envFileFound } from "../server/env.js";
 import { LlmGateway } from "../server/llm/gateway.js";
 import { worstCaseCost } from "../server/llm/pricing.js";
@@ -20,7 +20,8 @@ if (!["action", "reflection", "newspaper"].includes(roleArg)) {
 }
 
 const cfg = loadConfig();
-const rc = roleConfigFor(cfg, roleArg, null);
+const runtime = applyRuntimeOverrides(cfg, process.env); // MODEL_PRESET で住人のモデルを切り替えて確かめられる
+const rc = roleConfigFor(cfg, roleArg, cfg.derived.names[0]);
 console.log(`役割：${rc.label}（${roleArg}） モデル：${rc.model} effort：${rc.effort} thinking：${rc.thinking ? rc.thinking.type : "既定"} max_tokens：${rc.max_tokens}`);
 
 if (!yes) {
@@ -46,7 +47,7 @@ if (!hasApiKey()) {
 }
 
 const ledger = new Ledger();
-const rec = new RunRecorder({ kind: "probe", mode: "real", extraMeta: { role: roleArg } });
+const rec = new RunRecorder({ kind: "probe", mode: "real", extraMeta: { role: roleArg, runtime } });
 const gw = new LlmGateway({ cfg, mode: "real", recorder: rec, ledger });
 const town = new Town({ cfg, gateway: gw, recorder: rec });
 town.startOfDay();
