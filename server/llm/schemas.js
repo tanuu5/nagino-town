@@ -5,7 +5,7 @@ export function actionSchema(derived, moods) {
   return {
     type: "object",
     properties: {
-      thought: { type: "string", description: "内心のつぶやき（40字以内）。口には出さない本音" },
+      thought: { type: "string", description: "内心のつぶやき。短く一文で（30字くらい、40字まで）" },
       action: { type: "string", enum: derived.actions },
       target: { type: "string", enum: derived.targets, description: "行き先・相手・投票先。なければ空文字" },
       item: { type: "string", enum: derived.items, description: "buy と give で使う品物。なければ空文字" },

@@ -48,12 +48,15 @@ export function makeRng(seed) {
 }
 
 // 制御文字を除き、長さを切る（AI の文字列や天の声の自由入力に使う）
-export function cleanText(s, max) {
+export function cleanText(s, max, { ellipsis = false } = {}) {
   const t = String(s ?? "")
     .replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
-  return [...t].slice(0, max).join("");
+  const chars = [...t];
+  if (chars.length <= max) return t;
+  // 切り詰めたことが分かるよう、必要なら最後を「…」にする
+  return ellipsis ? chars.slice(0, max - 1).join("") + "…" : chars.slice(0, max).join("");
 }
 
 export function charLen(s) {

@@ -532,8 +532,8 @@ export class Town {
   sanitize(v) {
     return {
       ...v,
-      thought: cleanText(v.thought, 40),
-      say: cleanText(v.say, 60),
+      thought: cleanText(v.thought, 40, { ellipsis: true }),
+      say: cleanText(v.say, 60, { ellipsis: true }),
       remember: (v.remember || []).slice(0, this.w.memory.max_remember_per_call).map((m) => ({
         text: cleanText(m.text, this.w.memory.max_text_chars),
         importance: clamp(m.importance, 1, 10),
@@ -962,6 +962,7 @@ export class Town {
         instructions.push(`あなたは${this.shortOf[extra.partner]}と話しています。`);
         instructions.push(`続けるなら action を talk、target を ${extra.partner}、say に次の一言（60字以内）。`);
         instructions.push("会話を終えるなら talk 以外の行動を選ぶ（それがそのまま次の行動になる）。終えるときは remember に、この会話の要点を自分の言葉で1〜2件書く。");
+        instructions.push("同じことの言い換えになってきたら、無理に続けずに切り上げてよい。");
       } else {
         instructions.push("次の行動を1つ選び、決められた形の JSON で答えてください。");
         if (r.afterConversation) {
