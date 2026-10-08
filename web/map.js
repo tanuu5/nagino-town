@@ -512,6 +512,20 @@ export class TownMap {
       }
     }
 
+    // 日付と時刻（書き出した画像でもいつの場面か分かるように）
+    if (snap) {
+      ctx.font = `700 15px ${FONT}`;
+      const cap = `${this.world.town_name}　${snap.day}日目 ${snap.time}`;
+      const cw = ctx.measureText(cap).width + 20;
+      ctx.fillStyle = "rgba(251,248,240,0.88)";
+      rr(ctx, 14, H - 38, cw, 26, 8);
+      ctx.fill();
+      ctx.fillStyle = "#1e3a5f";
+      ctx.textAlign = "left";
+      ctx.textBaseline = "middle";
+      ctx.fillText(cap, 24, H - 25);
+    }
+
     // 吹き出し
     this.bubbles = this.bubbles.filter((b) => b.until > now);
     const placed = [];
