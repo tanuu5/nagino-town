@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>凪野町 — AIだけの街</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@400;500;700&display=swap" />
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <header class="bar">
+      <div class="bar-row">
+        <div class="brand">
+          <span class="brand-mark" aria-hidden="true"></span>
+          <span class="brand-name">凪野町</span>
+          <span class="mode" id="mode">…</span>
+        </div>
+        <div class="clock" id="clock">—</div>
+        <div class="group" role="group" aria-label="進行">
+          <button id="btn-play" class="btn primary" type="button">▶ 再生</button>
+          <button id="btn-pause" class="btn" type="button">一時停止</button>
+          <button id="btn-step" class="btn" type="button">1ティック</button>
+          <span class="seg" id="speed" role="group" aria-label="速度"></span>
+          <button id="btn-next" class="btn accent" type="button" hidden>次の日へ</button>
+        </div>
+        <div class="cost" id="cost" title="今回の費用と上限 ／ 台帳の累計と上限">
+          <div><span class="cost-label">今回</span> <span id="cost-run">$0</span><span class="cost-cap" id="cost-run-cap"></span></div>
+          <div><span class="cost-label">台帳</span> <span id="cost-ledger">$0</span><span class="cost-cap" id="cost-ledger-cap"></span></div>
+        </div>
+      </div>
+      <div class="bar-row second">
+        <div class="group" role="group" aria-label="天の声">
+          <span class="group-label">天の声</span>
+          <button class="btn small" data-heaven="storm" type="button">嵐が来る</button>
+          <button class="btn small" data-heaven="wallet" type="button">財布を落とす</button>
+          <button class="btn small" data-heaven="oven" type="button">かまどが止まる</button>
+          <button class="btn small" data-heaven="letter" type="button">手紙を届ける…</button>
+          <button class="btn small" data-heaven="free" type="button">自由入力…</button>
+        </div>
+        <div class="group" role="group" aria-label="表示と書き出し">
+          <label class="toggle"><input type="checkbox" id="toggle-thought" /> <span>内心を表示</span></label>
+          <button class="btn small" id="btn-png" type="button">地図を PNG で保存</button>
+          <button class="btn small" id="btn-logmd" type="button">ログを Markdown で保存</button>
+          <button class="btn small" id="btn-news" type="button">新聞</button>
+          <button class="btn small" id="btn-replay" type="button">過去の記録を再生…</button>
+          <button class="btn small" id="btn-replay-exit" type="button" hidden>再生をやめる</button>
+          <button class="btn small" id="btn-new" type="button" hidden>新しい町</button>
+        </div>
+      </div>
+      <div class="status" id="status" role="status" aria-live="polite"></div>
+    </header>
+
+    <main class="main">
+      <section class="stage" aria-label="町の地図">
+        <canvas id="map" width="1000" height="680"></canvas>
+        <div class="stage-note" id="stage-note"></div>
+      </section>
+      <aside class="side" aria-label="ログ">
+        <div class="side-head">
+          <h2>ログ</h2>
+          <select id="log-filter" aria-label="人物で絞り込み">
+            <option value="">全員</option>
+            <option value="@events">出来事だけ</option>
+          </select>
+        </div>
+        <ol class="log" id="log"></ol>
+      </aside>
+    </main>
+
+    <div class="modal" id="modal" hidden>
+      <div class="modal-back" data-close="1"></div>
+      <div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+        <div class="modal-head">
+          <h2 id="modal-title"></h2>
+          <button class="btn small" type="button" data-close="1">閉じる</button>
+        </div>
+        <div class="modal-body" id="modal-body"></div>
+      </div>
+    </div>
+
+    <div class="toast" id="toast" hidden></div>
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

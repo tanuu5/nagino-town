@@ -1,0 +1,23 @@
+{
+  "_note": "100万トークンあたりの USD。2026-10-08 に公式の価格ページで確認。tiers は max_prompt_tokens の小さい順。prompt は input + cache_creation + cache_read の合計で判定する。",
+  "checked_at": "2026-10-08",
+  "source": "https://platform.claude.com/docs/en/about-claude/pricing",
+  "models": {
+    "claude-haiku-5-5": {
+      "tiers": [
+        { "max_prompt_tokens": 100000, "input": 0.10, "output": 0.50, "cache_write_5m": 0.125, "cache_write_1h": 0.20, "cache_read": 0.01 },
+        { "max_prompt_tokens": null, "input": 0.50, "output": 2.50, "cache_write_5m": 0.625, "cache_write_1h": 1.00, "cache_read": 0.05 }
+      ]
+    },
+    "claude-sonnet-5-5": {
+      "tiers": [
+        { "max_prompt_tokens": null, "input": 2.00, "output": 10.00, "cache_write_5m": 2.50, "cache_write_1h": 4.00, "cache_read": 0.10 }
+      ]
+    },
+    "claude-opus-5-5": {
+      "tiers": [
+        { "max_prompt_tokens": null, "input": 4.00, "output": 20.00, "cache_write_5m": 5.00, "cache_write_1h": 8.00, "cache_read": 0.20 }
+      ]
+    }
+  }
+}

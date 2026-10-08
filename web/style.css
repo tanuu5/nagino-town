@@ -1,0 +1,638 @@
+/* 凪野町：生成りの紙に藍と朱。ライトテーマのみ。 */
+:root {
+  --bg: #f4eee1;
+  --paper: #fbf8f0;
+  --paper-2: #f0e8d6;
+  --line: #d8ccb4;
+  --ink: #1d2733;
+  --muted: #55606d;
+  --ai: #1e3a5f;
+  --ai-soft: #dfe7f1;
+  --shu: #c0432a;
+  --shu-soft: #f7e1da;
+  --ok: #2f6b57;
+  --font: "Zen Maru Gothic", "Hiragino Maru Gothic ProN", "BIZ UDPGothic", "Yu Gothic UI", "Meiryo", sans-serif;
+  --radius: 10px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+}
+
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font);
+  font-size: 14px;
+  line-height: 1.55;
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+button,
+select,
+input,
+textarea {
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+}
+
+/* ---------- 上部のバー ---------- */
+.bar {
+  background: var(--paper);
+  border-bottom: 1px solid var(--line);
+  padding: 8px 16px 6px;
+}
+
+.bar-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 18px;
+}
+
+.bar-row.second {
+  margin-top: 6px;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.brand-mark {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--ai);
+  box-shadow: inset 0 -7px 0 0 var(--shu);
+}
+
+.brand-name {
+  font-weight: 700;
+  font-size: 20px;
+  letter-spacing: 0.08em;
+  color: var(--ai);
+}
+
+.mode {
+  font-size: 12px;
+  font-weight: 700;
+  border-radius: 999px;
+  padding: 1px 10px;
+  border: 1px solid var(--line);
+  background: var(--paper-2);
+  color: var(--muted);
+}
+
+.mode.real {
+  background: var(--shu);
+  border-color: var(--shu);
+  color: #fff;
+}
+
+.mode.replay {
+  background: var(--ai);
+  border-color: var(--ai);
+  color: #fff;
+}
+
+.clock {
+  font-weight: 700;
+  font-size: 18px;
+  color: var(--ai);
+  min-width: 9em;
+  font-variant-numeric: tabular-nums;
+}
+
+.group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.group-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--shu);
+  margin-right: 2px;
+}
+
+.btn {
+  border: 1px solid var(--line);
+  background: #fff;
+  border-radius: 8px;
+  padding: 5px 12px;
+  cursor: pointer;
+  line-height: 1.3;
+}
+
+.btn:hover {
+  border-color: var(--ai);
+}
+
+.btn:focus-visible,
+select:focus-visible,
+input:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid var(--ai);
+  outline-offset: 2px;
+}
+
+.btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.btn.primary {
+  background: var(--ai);
+  border-color: var(--ai);
+  color: #fff;
+}
+
+.btn.accent {
+  background: var(--shu);
+  border-color: var(--shu);
+  color: #fff;
+}
+
+.btn.small {
+  padding: 3px 10px;
+  font-size: 13px;
+}
+
+.seg {
+  display: inline-flex;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.seg button {
+  border: 0;
+  background: #fff;
+  padding: 5px 10px;
+  cursor: pointer;
+}
+
+.seg button + button {
+  border-left: 1px solid var(--line);
+}
+
+.seg button.on {
+  background: var(--ai-soft);
+  color: var(--ai);
+  font-weight: 700;
+}
+
+.cost {
+  margin-left: auto;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.35;
+}
+
+.cost-label {
+  display: inline-block;
+  width: 2.6em;
+  color: var(--muted);
+}
+
+.cost-cap {
+  color: var(--muted);
+}
+
+.cost.warn #cost-run,
+.cost.warn #cost-ledger {
+  color: var(--shu);
+  font-weight: 700;
+}
+
+.toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.status {
+  margin-top: 4px;
+  font-size: 13px;
+  color: var(--muted);
+  min-height: 1.4em;
+}
+
+.status.alert {
+  color: var(--shu);
+  font-weight: 700;
+}
+
+/* ---------- 地図とログ ---------- */
+.main {
+  flex: 1;
+  display: flex;
+  gap: 12px;
+  padding: 12px 16px 16px;
+  min-height: 0;
+}
+
+.stage {
+  flex: 1;
+  min-width: 0;
+  position: relative;
+}
+
+#map {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: calc(100vh - 150px);
+  object-fit: contain;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+
+.stage-note {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 6px;
+}
+
+.side {
+  width: 380px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  min-height: 0;
+  max-height: calc(100vh - 150px);
+}
+
+.side-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.side-head h2 {
+  margin: 0;
+  font-size: 15px;
+  color: var(--ai);
+}
+
+.side-head select {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 2px 6px;
+  background: #fff;
+}
+
+.log {
+  list-style: none;
+  margin: 0;
+  padding: 6px 10px 10px;
+  overflow-y: auto;
+  flex: 1;
+  min-height: 200px;
+}
+
+.log li {
+  padding: 4px 2px;
+  border-bottom: 1px dashed #e6dcc8;
+  font-size: 13px;
+}
+
+.log .t {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  margin-right: 6px;
+  font-size: 12px;
+}
+
+.log .who {
+  font-weight: 700;
+  margin-right: 4px;
+}
+
+.log .dot {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  margin-right: 4px;
+  vertical-align: 0;
+}
+
+.log .say .txt::before {
+  content: "「";
+}
+
+.log .say .txt::after {
+  content: "」";
+}
+
+.log .say .txt {
+  color: var(--ink);
+}
+
+.log .event,
+.log .heaven {
+  background: var(--shu-soft);
+  border-radius: 6px;
+  border-bottom-color: transparent;
+  margin: 2px 0;
+  padding: 4px 6px;
+}
+
+.log .heaven .txt {
+  color: var(--shu);
+  font-weight: 700;
+}
+
+.log .meeting,
+.log .vote,
+.log .news,
+.log .reflection {
+  background: var(--ai-soft);
+  border-radius: 6px;
+  border-bottom-color: transparent;
+  margin: 2px 0;
+  padding: 4px 6px;
+}
+
+.log .system {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.log .fail .txt {
+  color: var(--muted);
+}
+
+.log .thought-line {
+  display: none;
+  color: #6a5a86;
+  font-size: 12px;
+  padding-left: 1em;
+}
+
+.show-thought .log .thought-line {
+  display: block;
+}
+
+.log .thought {
+  display: none;
+}
+
+.show-thought .log .thought {
+  display: list-item;
+  color: #6a5a86;
+}
+
+/* ---------- モーダル ---------- */
+.modal {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.modal[hidden] {
+  display: none;
+}
+
+.modal-back {
+  position: absolute;
+  inset: 0;
+  background: rgba(29, 39, 51, 0.38);
+}
+
+.modal-box {
+  position: relative;
+  background: var(--paper);
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  width: min(720px, 100%);
+  max-height: calc(100vh - 32px);
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 16px 40px rgba(29, 39, 51, 0.22);
+}
+
+.modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--line);
+}
+
+.modal-head h2 {
+  margin: 0;
+  font-size: 18px;
+  color: var(--ai);
+}
+
+.modal-body {
+  padding: 14px 18px 18px;
+  overflow-y: auto;
+}
+
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.stat {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 6px 10px;
+}
+
+.stat .k {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.stat .v {
+  font-weight: 700;
+}
+
+.bar-meter {
+  height: 8px;
+  border-radius: 4px;
+  background: var(--paper-2);
+  overflow: hidden;
+  margin-top: 3px;
+}
+
+.bar-meter span {
+  display: block;
+  height: 100%;
+  background: var(--shu);
+}
+
+.card h3 {
+  font-size: 14px;
+  color: var(--ai);
+  margin: 14px 0 6px;
+}
+
+.card ul {
+  margin: 0;
+  padding-left: 1.2em;
+}
+
+.card li {
+  margin: 2px 0;
+}
+
+.rel {
+  display: grid;
+  grid-template-columns: 6em 1fr 2.5em;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.rel-track {
+  position: relative;
+  height: 8px;
+  background: var(--paper-2);
+  border-radius: 4px;
+}
+
+.rel-track span {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  border-radius: 4px;
+}
+
+.secret {
+  background: var(--shu-soft);
+  border-radius: 8px;
+  padding: 8px 10px;
+  margin-top: 8px;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.news {
+  font-size: 15px;
+}
+
+.news h1 {
+  font-size: 22px;
+  border-bottom: 3px double var(--ink);
+  padding-bottom: 4px;
+  margin: 0 0 10px;
+}
+
+.news h2 {
+  font-size: 19px;
+  color: var(--shu);
+  margin: 10px 0 6px;
+}
+
+.news h3 {
+  font-size: 15px;
+  color: var(--ai);
+  margin: 14px 0 4px;
+  border-left: 4px solid var(--ai);
+  padding-left: 8px;
+}
+
+.news p {
+  margin: 4px 0 8px;
+}
+
+.tabs {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+
+.form-row {
+  margin: 8px 0;
+}
+
+.form-row label {
+  display: block;
+  font-size: 13px;
+  color: var(--muted);
+  margin-bottom: 3px;
+}
+
+.form-row input,
+.form-row select,
+.form-row textarea {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 6px 8px;
+  background: #fff;
+}
+
+.runs li {
+  margin: 4px 0;
+}
+
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: 20px;
+  transform: translateX(-50%);
+  background: var(--ai);
+  color: #fff;
+  padding: 8px 16px;
+  border-radius: 999px;
+  z-index: 30;
+  font-size: 13px;
+}
+
+.toast[hidden] {
+  display: none;
+}
+
+@media (max-width: 980px) {
+  .main {
+    flex-direction: column;
+  }
+  .side {
+    width: auto;
+    max-height: 50vh;
+  }
+  #map {
+    max-height: none;
+  }
+  .cost {
+    margin-left: 0;
+  }
+}

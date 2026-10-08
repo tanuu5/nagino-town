@@ -1,0 +1,116 @@
+{
+  "_note": "町の仕様。時刻は 24 時間表記の HH:MM。",
+  "town_name": "凪野町",
+  "seed": 20261008,
+  "time": {
+    "tick_minutes": 15,
+    "day_start": "06:00",
+    "day_end": "23:00",
+    "days": 3,
+    "extension_days": 0,
+    "end_after_meeting": true,
+    "tick_seconds_1x": 3,
+    "speeds": [1, 4]
+  },
+  "places": [
+    { "name": "住宅通り", "kind": "home", "color": "#efe3c8", "sign": "住宅通り", "rect": [40, 20, 920, 110], "door": [500, 135], "attach": [500, 155] },
+    { "name": "パン屋", "kind": "shop", "color": "#f4d9b0", "sign": "パン屋 こはる", "rect": [40, 185, 240, 160], "door": [285, 265], "attach": [305, 265] },
+    { "name": "広場", "kind": "square", "color": "#dfe8d2", "sign": "広場", "rect": [340, 185, 320, 215], "door": [500, 180], "attach": [500, 155] },
+    { "name": "図書館", "kind": "library", "color": "#d9e2ec", "sign": "町立図書館", "rect": [720, 185, 240, 160], "door": [715, 265], "attach": [695, 265] },
+    { "name": "港", "kind": "harbor", "color": "#cfe0e3", "sign": "凪野港", "rect": [40, 445, 600, 110], "door": [330, 440], "attach": [330, 425] },
+    { "name": "酒場「潮だまり」", "kind": "tavern", "color": "#ecd3c7", "sign": "酒場 潮だまり", "rect": [680, 445, 280, 110], "door": [760, 440], "attach": [695, 425] }
+  ],
+  "map": {
+    "width": 1000,
+    "height": 680,
+    "road_nodes": { "N1": [305, 155], "N2": [500, 155], "N3": [695, 155], "N4": [305, 425], "N5": [500, 425], "N6": [695, 425] },
+    "road_edges": [["N1", "N2"], ["N2", "N3"], ["N1", "N4"], ["N3", "N6"], ["N4", "N5"], ["N5", "N6"]],
+    "sea_top": 565,
+    "lighthouse": [880, 618]
+  },
+  "bakery": {
+    "place": "パン屋",
+    "owner": "小春ミナミ",
+    "daily_capacity": 40,
+    "batches": ["06:00", "09:00", "12:00", "15:00"],
+    "price": 2,
+    "max_per_purchase": 6,
+    "owner_must_be_present": true,
+    "oven": { "initial_health": 1.0, "daily_decay_min": 0.0, "daily_decay_max": 0.25, "min_health": 0.3 }
+  },
+  "hunger": {
+    "initial_min": 2,
+    "initial_max": 4,
+    "per_hour": 0.5,
+    "overnight": 1,
+    "eat_reduce": 4,
+    "trigger_threshold": 8
+  },
+  "work_pay_per_hour": {
+    "鳴海トキ": 2,
+    "小春ミナミ": 2,
+    "澄川ハルオ": 3,
+    "潮田ゲン": 4,
+    "文月ユウ": 2,
+    "波多カイ": 1,
+    "遠野サキ": 2,
+    "ロッテ": 1
+  },
+  "town_fund": 300,
+  "meeting": {
+    "day": 3,
+    "time": "18:00",
+    "announce_time": "17:30",
+    "place": "広場",
+    "chair": "澄川ハルオ",
+    "agenda": "町の積立金300コインの使い道",
+    "options": ["灯台の修繕", "新しい桟橋", "パン屋の新しいかまど"]
+  },
+  "scheduled_events": [
+    { "day": 2, "time": "10:00", "type": "arrival", "who": "ロッテ", "place": "港" }
+  ],
+  "random_events": {
+    "enabled": true,
+    "per_day_min": 1,
+    "per_day_max": 2,
+    "earliest": "08:00",
+    "latest": "20:00",
+    "pool": [
+      { "place": "港", "text": "港に珍しい大きな鯛が一匹だけ揚がった" },
+      { "place": "広場", "text": "カモメが広場のベンチに置かれた包みをさらっていった" },
+      { "place": "図書館", "text": "図書館に差出人の書かれていない古い写真の束が寄贈された" },
+      { "place": "酒場「潮だまり」", "text": "酒場の古い柱時計が急に止まった" },
+      { "place": "住宅通り", "text": "住宅通りで迷い猫が鳴いている" },
+      { "place": "広場", "text": "広場の掲示板に、集会のお知らせが貼り直されていた" },
+      { "place": "港", "text": "沖を見慣れない帆船が通り過ぎた" }
+    ]
+  },
+  "heaven": {
+    "storm_ticks": 12,
+    "storm_closed_places": ["港", "広場"],
+    "storm_shelter": "酒場「潮だまり」",
+    "wallet_coins": 30,
+    "free_text_max": 120
+  },
+  "memory": {
+    "retrieve_top_k": 20,
+    "card_top_n": 10,
+    "weight_importance": 1.0,
+    "weight_recency": 1.0,
+    "weight_relevance": 0.8,
+    "recency_half_life_hours": 6,
+    "max_remember_per_call": 3,
+    "max_text_chars": 80
+  },
+  "conversation": {
+    "max_utterances_each": 6,
+    "utterances_per_tick": 2,
+    "eavesdrop_fragments": 2
+  },
+  "triggers": {
+    "arrival_cooldown_ticks": 2,
+    "min_plan_minutes": 15,
+    "default_plan_minutes": 60
+  },
+  "moods": ["上機嫌", "ふつう", "不機嫌", "不安", "うきうき", "疲れた", "怒っている", "悲しい", "疑っている", "焦っている"]
+}

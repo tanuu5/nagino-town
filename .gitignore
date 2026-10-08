@@ -1,0 +1,18 @@
+# 秘密情報
+.env
+.env.*
+!.env.example
+
+# 依存とビルド物
+node_modules/
+
+# OS・エディタ
+.DS_Store
+*.swp
+.vscode/
+.idea/
+
+# 実行記録はアプリの外（../runs, ../ledger）に出すが、念のため
+runs/
+ledger/
+*.log

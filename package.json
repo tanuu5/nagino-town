@@ -1,0 +1,21 @@
+{
+  "name": "nagino-town",
+  "version": "0.1.0",
+  "description": "AIだけの街「凪野町」— 住人を Claude が演じる、ローカルで眺めるシミュレーション",
+  "private": true,
+  "type": "module",
+  "author": "たぬ",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20.12"
+  },
+  "scripts": {
+    "start": "node server/index.js",
+    "probe": "node scripts/probe.js",
+    "headless": "node scripts/headless.js",
+    "selfcheck": "node scripts/selfcheck.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "0.132.1"
+  }
+}

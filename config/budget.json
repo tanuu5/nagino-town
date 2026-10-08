@@ -1,0 +1,7 @@
+{
+  "_note": "費用の上限（USD）。どちらかに達したら止める。",
+  "run_cap_usd": 3,
+  "ledger_cap_usd": 90,
+  "max_input_tokens": 80000,
+  "disconnect_pause_seconds": 30
+}
