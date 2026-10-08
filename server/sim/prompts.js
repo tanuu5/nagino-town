@@ -3,6 +3,55 @@
 // 日ごとに変わるもの（目標・思い込み・関係値・記憶）は user 側に入れる。
 import { minToHhmm } from "../util.js";
 
+// ---------- 空腹の伝え方（シナリオ2）。base では hunger.tell も consequences も無く、今までの文面のまま ----------
+
+/** 帰結や言葉の判定に使う空腹の段階（0〜10）。画面と住人に見せる数字と同じ丸め方 */
+export function hungerLevel(h) {
+  return Math.round(h);
+}
+
+/** 空腹の段階を言葉にする（hunger.words の表から） */
+export function hungerWord(hg, h) {
+  const lv = hungerLevel(h);
+  const row = hg.words.find((w) => lv <= w.max) || hg.words[hg.words.length - 1];
+  return row.text;
+}
+
+/** 住人に見せる空腹の状態。tell が words なら数字を出さない */
+export function hungerState(hg, h) {
+  if (hg.tell === "words") return `腹の具合：${hungerWord(hg, h)}`;
+  return `空腹度：${hungerLevel(h)}/10`;
+}
+
+/** 町のルールに書く空腹の決まり（帰結を含む） */
+function hungerRuleLines(w) {
+  const hg = w.hunger;
+  const cq = hg.consequences;
+  const words = hg.tell === "words";
+  const lines = [];
+  if (words) {
+    const ladder = hg.words.map((x) => `「${x.text}」`).join("→");
+    lines.push(`- 空腹は時間とともに増し、パンを1個食べるとおさまる。腹の具合は${ladder}の順に悪くなる。`);
+  } else {
+    lines.push("- 空腹度は0〜10。時間とともに上がり、パンを1個食べると下がる。");
+  }
+  if (cq) {
+    const tm = w.time.tick_minutes;
+    // 言葉の段階はおおまかなので（7〜8 が同じ言葉など）、段階の途中から帰結が始まるときは「あたり」と書く。
+    // 帰結が実際に効いているかどうかは、状態の欄（bodyNote）でそのつど知らせる
+    const at = (lv) => {
+      if (!words) return `空腹度が${lv}${lv >= 10 ? "" : "以上"}になると`;
+      const i = hg.words.findIndex((x) => lv <= x.max);
+      const bandMin = i > 0 ? hg.words[i - 1].max + 1 : 0;
+      return `腹の具合が「${hg.words[i].text}」${bandMin === lv ? "になると" : "あたりまで来ると"}`;
+    };
+    lines.push(`- ${at(cq.slow_move_at)}、移動にいつもより${tm}分よけいにかかり、会話で話せる回数が半分になる。`);
+    lines.push(`- ${at(cq.collapse_at)}、働けなくなり、その場に座り込んで${(cq.collapse_ticks * tm) / 60}時間は動けない。`);
+    lines.push("- 空腹の帰結はプログラムが判定する。口で「平気だ」と言っても、体は楽にならない。");
+  }
+  return lines;
+}
+
 export function townRules(cfg) {
   const w = cfg.world;
   const c = cfg.characters.residents;
@@ -17,9 +66,10 @@ export function townRules(cfg) {
     `- 時間は${w.time.tick_minutes}分きざみで進む。1日は${w.time.day_start}〜${w.time.day_end}。夜は家で眠る。`,
     `- ${m.day}日目の${m.time}に${m.place}で町民集会がある。議題は${m.agenda}。選択肢は${m.options.map((o) => `「${o}」`).join("")}の三つ。投票できるのは町の住人${voters}人で、同数なら町会長の${m.chair}が決める。集会では一人ずつ意見を言ってから投票する。`,
     `- お金はコイン。パンはパン屋で1個${w.bakery.price}コイン。1日に焼ける数には限りがある（多くて${w.bakery.daily_capacity}個）。店主の${w.bakery.owner}が店にいるときだけ買える。`,
-    "- 空腹度は0〜10。時間とともに上がり、パンを1個食べると下がる。",
+    ...hungerRuleLines(w),
     "- 自分の職場で働くと、少しずつコインが入る。",
     "- 物の数、売り買い、受け渡し、投票の集計はすべてプログラムが判定する。お金やパンが足りなければ失敗し、そのことがあなたに知らされる。口で「買った」と言っても、行動で買わなければ手に入らない。",
+    ...(w.rules_extra || []).map((s) => `- ${s}`),
     "",
     "■ 住人（表向きに知られていること）",
     ...locals.map((r) => `- ${r.name}（${r.short}）：${r.age_job}`),
@@ -96,8 +146,9 @@ export function situation(ctx) {
   L.push(`【いま】${ctx.day}日目 ${ctx.time}（${ctx.placeNote}）`);
   if (ctx.meetingNote) L.push(`【集会】${ctx.meetingNote}`);
   L.push(
-    `【あなたの状態】場所：${ctx.res.loc} ／ 所持金：${ctx.res.coins}コイン ／ パン：${ctx.res.items["パン"] || 0}個 ／ 空腹度：${Math.round(ctx.res.hunger)}/10 ／ 気分：${ctx.res.mood}`,
+    `【あなたの状態】場所：${ctx.res.loc} ／ 所持金：${ctx.res.coins}コイン ／ パン：${ctx.res.items["パン"] || 0}個 ／ ${ctx.hungerText} ／ 気分：${ctx.res.mood}`,
   );
+  if (ctx.bodyNote) L.push(`【体のぐあい】${ctx.bodyNote}`);
   L.push(`【持ち物】${fmtInv(ctx.res)}`);
   if (ctx.res.plan) L.push(`【これまでの予定】${ctx.res.plan.desc}（${minToHhmm(ctx.res.plan.until)}まで）`);
   if (ctx.res.goal) L.push(`【今日の目標】${ctx.res.goal}`);
@@ -136,7 +187,11 @@ export function situation(ctx) {
 export function reflectionUser(ctx) {
   const L = [];
   L.push(`【${ctx.day}日目の終わり（${ctx.time}）】今日一日を振り返ってください。`);
-  L.push(`【あなたの状態】所持金：${ctx.res.coins}コイン ／ パン：${ctx.res.items["パン"] || 0}個 ／ 空腹度：${Math.round(ctx.res.hunger)}/10 ／ 気分：${ctx.res.mood}`);
+  L.push(`【あなたの状態】所持金：${ctx.res.coins}コイン ／ パン：${ctx.res.items["パン"] || 0}個 ／ ${ctx.hungerText} ／ 気分：${ctx.res.mood}`);
+  if (ctx.pinned && ctx.pinned.length) {
+    L.push("【頭から離れないこと】");
+    for (const m of ctx.pinned) L.push(`- ${m}`);
+  }
   L.push("【今日の記憶】");
   for (const m of ctx.todayMemories) L.push(`- ${m}`);
   if (ctx.beliefs.length) {

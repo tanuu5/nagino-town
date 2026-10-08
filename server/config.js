@@ -13,13 +13,76 @@ const MODEL_RULES = {
   "claude-opus-5-5": { allowed: [null, "adaptive"], maxEffortFor: {} },
 };
 
-function readJson(name) {
-  const file = path.join(CONFIG_DIR, name);
-  return JSON.parse(fs.readFileSync(file, "utf8"));
+const SCENARIO_DIR = path.join(CONFIG_DIR, "scenarios");
+const SCENARIO_NAME_RE = /^[a-z0-9][a-z0-9-]{0,39}$/;
+
+function readText(name) {
+  return fs.readFileSync(path.join(CONFIG_DIR, name), "utf8");
 }
 
 function fail(msg) {
   throw new Error(`設定エラー: ${msg}`);
+}
+
+function isPlainObject(v) {
+  return v !== null && typeof v === "object" && !Array.isArray(v);
+}
+
+/**
+ * シナリオの差分を重ねる。オブジェクトは項目ごとに重ね、配列と値は置き換える。
+ * 配列の位置に {"$append": [...]} と書くと、元の配列の後ろに足す。
+ */
+export function overlay(base, over, where = "$") {
+  if (isPlainObject(over) && "$append" in over) {
+    if (!Array.isArray(base) || !Array.isArray(over.$append) || Object.keys(over).length !== 1) fail(`${where}: $append は配列にだけ使える`);
+    return [...base, ...over.$append];
+  }
+  if (isPlainObject(base) && isPlainObject(over)) {
+    const out = { ...base };
+    for (const [k, v] of Object.entries(over)) {
+      if (!(k in base) && isPlainObject(v) && "$append" in v) fail(`${where}.${k}: base に無い項目には $append を使えない`);
+      out[k] = k in base ? overlay(base[k], v, `${where}.${k}`) : v;
+    }
+    return out;
+  }
+  return over;
+}
+
+/** characters.json の差分：residents は名前で突き合わせて重ねる（新しい住人は足さない） */
+function overlayCharacters(base, over, where) {
+  const { residents, ...rest } = over;
+  const out = overlay(base, rest, where);
+  if (residents !== undefined) {
+    if (!Array.isArray(residents)) fail(`${where}.residents は配列にする`);
+    out.residents = base.residents.slice();
+    for (const part of residents) {
+      const i = out.residents.findIndex((r) => r.name === part.name);
+      if (i < 0) fail(`${where}: 住人「${part.name}」は base にいない`);
+      out.residents[i] = overlay(out.residents[i], part, `${where}.residents[${part.name}]`);
+    }
+  }
+  return out;
+}
+
+/** config/scenarios/（名前）/ を読む。scenario.json の extends で別のシナリオを土台にできる */
+function readScenario(name, depth = 0) {
+  if (!SCENARIO_NAME_RE.test(name)) fail(`シナリオ名「${name}」は英小文字・数字・ハイフンで書く`);
+  const dir = path.join(SCENARIO_DIR, name);
+  if (!fs.existsSync(dir)) fail(`シナリオ「${name}」がありません（config/scenarios/${name}/）`);
+  if (depth > 4) fail("シナリオの extends が深すぎます");
+  const read = (f) => {
+    const file = path.join(dir, f);
+    return fs.existsSync(file) ? fs.readFileSync(file, "utf8") : null;
+  };
+  const metaText = read("scenario.json");
+  const meta = metaText ? JSON.parse(metaText) : {};
+  const parent = meta.extends ? readScenario(meta.extends, depth + 1) : { chain: [], layers: [] };
+  const layer = { name, meta, files: {} };
+  for (const f of ["scenario.json", "world.json", "characters.json"]) {
+    const t = read(f);
+    if (t != null) layer.files[f] = t;
+  }
+  return { chain: [...parent.chain, name], layers: [...parent.layers, layer], meta };
 }
 
 export function checkRoleConfig(where, rc, pricing) {
@@ -37,12 +100,31 @@ export function checkRoleConfig(where, rc, pricing) {
   if (!Number.isInteger(rc.max_tokens) || rc.max_tokens < 256) fail(`${where}: max_tokens が小さすぎます`);
 }
 
-export function loadConfig() {
-  const characters = readJson("characters.json");
-  const world = readJson("world.json");
-  const models = readJson("models.json");
-  const pricing = readJson("pricing.json");
-  const budget = readJson("budget.json");
+/**
+ * 設定を読む。scenario を指定すると、config/scenarios/（名前）/ の差分を world と characters に重ねる。
+ * 元の config/world.json と config/characters.json は書き換えない。指定がなければ今までどおりの町（base）。
+ */
+export function loadConfig({ scenario = "" } = {}) {
+  const raw = {};
+  for (const f of ["characters.json", "world.json", "models.json", "pricing.json", "budget.json"]) raw[f] = readText(f);
+  let characters = JSON.parse(raw["characters.json"]);
+  let world = JSON.parse(raw["world.json"]);
+  const models = JSON.parse(raw["models.json"]);
+  const pricing = JSON.parse(raw["pricing.json"]);
+  const budget = JSON.parse(raw["budget.json"]);
+
+  let scen = null;
+  const name = String(scenario || "").trim();
+  if (name && name !== "base") {
+    const s = readScenario(name);
+    for (const layer of s.layers) {
+      if (layer.files["world.json"]) world = overlay(world, JSON.parse(layer.files["world.json"]), `scenarios/${layer.name}/world.json`);
+      if (layer.files["characters.json"]) {
+        characters = overlayCharacters(characters, JSON.parse(layer.files["characters.json"]), `scenarios/${layer.name}/characters.json`);
+      }
+    }
+    scen = { name, title: s.meta.title || name, description: s.meta.description || "", chain: s.chain, layers: s.layers };
+  }
 
   const residents = characters.residents;
   if (!Array.isArray(residents) || residents.length === 0) fail("characters.json に住人がいません");
@@ -59,6 +141,7 @@ export function loadConfig() {
   }
   const options = world.meeting.options;
   for (const k of ["day_start", "day_end"]) if (hhmmToMin(world.time[k]) == null) fail(`time.${k} が HH:MM ではありません`);
+  checkScenarioRules(world, placeNames, options);
 
   // モデルの組み合わせを検査（通らないなら起動しない）
   for (const [role, rc] of Object.entries(models.roles)) checkRoleConfig(`roles.${role}`, rc, pricing);
@@ -82,7 +165,59 @@ export function loadConfig() {
   };
   derived.ticksPerDay = Math.round((derived.dayEndMin - derived.dayStartMin) / world.time.tick_minutes);
 
-  return { characters, world, models, pricing, budget, derived };
+  return { characters, world, models, pricing, budget, derived, scenario: scen, raw };
+}
+
+/** シナリオで入れる決まり（base には無い項目）を検査する */
+function checkScenarioRules(world, placeNames, options) {
+  const hg = world.hunger;
+  if (hg.tell !== undefined && !["number", "words"].includes(hg.tell)) fail('hunger.tell は "number" か "words"');
+  if (hg.tell === "words") {
+    const ws = hg.words;
+    if (!Array.isArray(ws) || !ws.length || ws[ws.length - 1].max < 10) fail("hunger.words は空腹度10までを覆う言葉の表にする");
+  }
+  const cq = hg.consequences;
+  if (cq) {
+    for (const k of ["slow_move_at", "half_talk_at", "no_work_at", "collapse_at", "collapse_ticks"]) {
+      if (!Number.isInteger(cq[k]) || cq[k] < 1) fail(`hunger.consequences.${k} は1以上の整数`);
+    }
+    if (hg.tell === "words") {
+      for (const k of ["slow_move_at", "collapse_at"]) if (!hg.words.some((w) => w.max >= cq[k])) fail(`hunger.words に ${k} の言葉が無い`);
+    }
+  }
+  const wx = world.weather;
+  if (wx) {
+    for (const p of wx.no_work_places || []) if (!placeNames.includes(p)) fail(`weather.no_work_places の「${p}」が場所にありません`);
+  }
+  const ov = world.bakery.oven;
+  if (ov.after_meeting && !options.includes(ov.after_meeting.option)) fail(`bakery.oven.after_meeting.option「${ov.after_meeting.option}」が集会の選択肢にない`);
+  if (ov.break_below !== undefined && !(ov.break_below > 0 && ov.break_below < 1)) fail("bakery.oven.break_below は0〜1");
+  for (const ev of world.random_events.pool) if (!placeNames.includes(ev.place)) fail(`random_events.pool の場所「${ev.place}」がありません`);
+}
+
+/**
+ * run の記録に残す設定一式（ファイル名 → 中身）。
+ * base のときは読み込んだ原文のまま。シナリオのときは world.json と characters.json を「その回に実際に使った設定」
+ * （差分を重ねたもの）にし、元の原文を base/ に、差分を scenario/（名前）/ に残す。
+ */
+export function configSnapshot(cfg) {
+  const out = { ...cfg.raw };
+  if (!cfg.scenario) return out;
+  out["world.json"] = JSON.stringify(cfg.world, null, 2) + "\n";
+  out["characters.json"] = JSON.stringify(cfg.characters, null, 2) + "\n";
+  out["base/world.json"] = cfg.raw["world.json"];
+  out["base/characters.json"] = cfg.raw["characters.json"];
+  for (const layer of cfg.scenario.layers) {
+    for (const [f, text] of Object.entries(layer.files)) out[`scenario/${layer.name}/${f}`] = text;
+  }
+  return out;
+}
+
+/** meta.json と画面に出す、シナリオの名前と説明 */
+export function scenarioInfo(cfg) {
+  if (!cfg.scenario) return { name: "base", title: "いつもの町", chain: [] };
+  const s = cfg.scenario;
+  return { name: s.name, title: s.title, description: s.description, chain: s.chain };
 }
 
 /**
@@ -129,7 +264,7 @@ export function roleConfigFor(cfg, role, residentName) {
   return base;
 }
 
-/** run の記録用に、読み込んだ設定の原文をそのまま返す */
+/** run の記録用に、設定フォルダの原文をそのまま返す（configSnapshot を渡されなかったときの予備） */
 export function readConfigFiles() {
   const out = {};
   for (const f of fs.readdirSync(CONFIG_DIR)) {

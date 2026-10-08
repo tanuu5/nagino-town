@@ -4,7 +4,7 @@ import { actionSchema, reflectionSchema, newspaperSchema } from "../llm/schemas.
 import { BudgetStop, FatalLlmError } from "../llm/gateway.js";
 import * as mock from "../llm/mock.js";
 import * as P from "./prompts.js";
-import { addMemory, retrieve, formatMemory, topForCard } from "./memory.js";
+import { addMemory, retrieve, formatMemory, topForCard, pinnedMemories } from "./memory.js";
 import { hhmmToMin, minToHhmm, makeRng, cleanText, charLen, clamp } from "../util.js";
 
 const ACTION_LABEL = {
@@ -29,6 +29,12 @@ export class Town {
     this.w = w;
     this.rng = makeRng(w.seed);
     this.mockRng = makeRng(w.seed + 7);
+    // シナリオで independent_rng を指定すると、かまどの傷みとランダムな出来事を住人の動きと切り離した乱数で決める
+    // （同じ種なら、住人の返事が違っても同じ日時にかまどが傷み、同じ出来事が起きる。条件を比べやすくするため）
+    this.ovenRng = w.bakery.oven.independent_rng ? makeRng(w.seed + 101) : this.rng;
+    this.eventRng = w.random_events.independent_rng ? makeRng(w.seed + 202) : this.rng;
+    this.cq = w.hunger.consequences || null; // 空腹の帰結（シナリオ2）。base では null
+    this.noWork = (w.weather && w.weather.no_work_places) || [];
     this.mockInvalidRate = mockInvalidRate;
     this.schema = actionSchema(cfg.derived, w.moods);
     this.reflSchema = reflectionSchema(cfg.derived);
@@ -96,9 +102,12 @@ export class Town {
         afterConversation: null,
         calls: 0,
         failures: 0,
+        transit: null, // 空腹で足が重く、移動の途中（シナリオ2）
+        collapsedUntilAbs: null, // 空腹で座り込んでいる（シナリオ2）
+        collapseArmed: true,
       };
       for (const m of c.initial_memories || []) {
-        addMemory(r, { day: 1, minute: cfg.derived.dayStartMin, text: m.text, importance: m.importance, source: { type: "thought" } }, w.memory);
+        addMemory(r, { day: 1, minute: cfg.derived.dayStartMin, text: m.text, importance: m.importance, source: { type: "thought" }, pinned: !!m.pinned }, w.memory);
       }
       this.res.set(c.name, r);
     }
@@ -165,7 +174,98 @@ export class Town {
   }
 
   at(place, exceptName) {
-    return this.activeResidents().filter((r) => r.loc === place && r.name !== exceptName);
+    // 移動の途中の人（シナリオ2）は、まだどこにも着いていない
+    return this.activeResidents().filter((r) => r.loc === place && r.name !== exceptName && !r.transit);
+  }
+
+  // ---------- 空腹の帰結と、仕事にならない場所（シナリオ2。base では何もしない） ----------
+  hungerLv(r) {
+    return P.hungerLevel(r.hunger);
+  }
+
+  isCollapsed(r) {
+    return r.collapsedUntilAbs != null;
+  }
+
+  /** いまの場所で働けないなら、その理由（働けるなら空文字） */
+  noWorkReason(r) {
+    if (this.noWork.includes(r.loc)) return this.w.weather.no_work_note || `${r.loc}は今は仕事にならない`;
+    if (this.cq && this.isCollapsed(r)) return "座り込んでいて働けない";
+    if (this.cq && this.hungerLv(r) >= this.cq.no_work_at) return "腹が減りすぎて働けない";
+    return "";
+  }
+
+  /** 会話で話せる回数（空腹だと半分） */
+  talkCap(r) {
+    const max = this.w.conversation.max_utterances_each;
+    if (this.cq && this.hungerLv(r) >= this.cq.half_talk_at) return Math.floor(max / 2);
+    return max;
+  }
+
+  untilText(abs) {
+    return minToHhmm(Math.min(this.cfg.derived.dayEndMin, abs - (this.day - 1) * 1440));
+  }
+
+  /** 状態の欄に出す、いま効いている帰結（数字は出さない。条件A・Bで同じ文） */
+  bodyNote(r) {
+    if (!this.cq) return "";
+    const lv = this.hungerLv(r);
+    const parts = [];
+    if (this.isCollapsed(r)) parts.push(`空腹で座り込んでいる。${this.untilText(r.collapsedUntilAbs)}までは動けず、働けない`);
+    else {
+      if (lv >= this.cq.no_work_at) parts.push("腹が減りすぎて働けない");
+      if (lv >= this.cq.slow_move_at) parts.push(`足が重く、移動にいつもより${this.w.time.tick_minutes}分よけいにかかる`);
+    }
+    if (lv >= this.cq.half_talk_at) parts.push(`口が回らず、会話で話せる回数が半分（${this.talkCap(r)}回）になる`);
+    return parts.join("。");
+  }
+
+  hungerFeelText(r) {
+    const hg = this.w.hunger;
+    if (hg.tell === "words") return `お腹がすいてきた。${P.hungerWord(hg, r.hunger)}`;
+    return `お腹がすいてきた（空腹度${Math.round(r.hunger)}）`;
+  }
+
+  /** 空腹度が帰結の線を越えたか。毎ティック、空腹が上がったあとに呼ぶ */
+  applyHungerConsequences(r) {
+    const cq = this.cq;
+    const s = r.short;
+    if (this.isCollapsed(r) && this.abs >= r.collapsedUntilAbs) {
+      r.collapsedUntilAbs = null;
+      this.perceive(r, "しばらく座り込んでいたが、どうにか立てそうだ", { memory: 3 });
+      this.log({ kind: "event", who: r.name, place: r.loc, text: `${s}は立ち上がれるようになった` });
+    }
+    const lv = this.hungerLv(r);
+    if (lv < cq.collapse_at) {
+      r.collapseArmed = true;
+      return;
+    }
+    if (!r.collapseArmed) return;
+    // 空腹度10：働けない。その場に座り込み、決まった時間は移動もできない
+    r.collapseArmed = false;
+    r.collapsedUntilAbs = this.abs + cq.collapse_ticks * this.w.time.tick_minutes;
+    if (!r.convId) {
+      r.activity = "rest";
+      r.plan = null;
+    }
+    const hg = this.w.hunger;
+    const until = this.untilText(r.collapsedUntilAbs);
+    const feel = hg.tell === "words" ? `${P.hungerWord(hg, r.hunger)}。` : `空腹度が${lv}になった。`;
+    this.perceive(r, `${feel}その場に座り込んでしまった。${until}までは動けず、働けない`, { memory: 7 });
+    for (const o of this.at(r.loc, r.name)) this.perceive(o, `${s}が腹をすかせて、その場に座り込んでしまった`, { memory: 5 });
+    this.log({ kind: "event", who: r.name, place: r.loc, text: `${s}は空腹のあまり${r.loc}で座り込んだ（${until}まで動けない）` });
+    this.publicLine(`${r.loc}で${s}が空腹のあまり座り込んだ`);
+  }
+
+  /** 移動の途中の人を、目的地に着かせる（ティックの頭で） */
+  resolveTransits() {
+    for (const r of this.activeResidents()) {
+      if (r.transit && this.abs >= r.transit.untilAbs) {
+        const from = r.transit.from;
+        r.transit = null;
+        this.onArrive(r, from);
+      }
+    }
   }
 
   isClosed(place) {
@@ -180,6 +280,13 @@ export class Town {
   // ---------- スナップショット（画面と再生用） ----------
   snapshot() {
     const nowAbs = this.abs;
+    const hg = this.w.hunger;
+    // シナリオで足した項目は、使っているときだけ載せる（base の記録を今までと同じにするため）
+    const extra = (r) => ({
+      ...(r.transit ? { transit: true } : {}),
+      ...(this.isCollapsed(r) ? { collapsedUntil: this.untilText(r.collapsedUntilAbs) } : {}),
+      ...(hg.tell === "words" ? { hungerWord: P.hungerWord(hg, r.hunger) } : {}),
+    });
     return {
       day: this.day,
       time: this.time,
@@ -188,7 +295,14 @@ export class Town {
       status: this.status,
       statusReason: this.statusReason,
       fund: this.fund,
-      bakery: { stock: this.bakery.stock, baked: this.bakery.bakedToday, stopped: this.bakery.stoppedToday },
+      ...(this.w.weather ? { weather: { label: this.w.weather.label, noWork: this.noWork } } : {}),
+      bakery: {
+        stock: this.bakery.stock,
+        baked: this.bakery.bakedToday,
+        stopped: this.bakery.stoppedToday,
+        ...(this.bakery.broken ? { broken: true } : {}),
+        ...(this.bakery.replaced ? { replaced: true } : {}),
+      },
       places: Object.fromEntries(Object.keys(this.places).map((p) => [p, { closed: this.isClosed(p) }])),
       wallet: this.wallet ? { place: this.wallet.holder ? null : this.wallet.place, holder: this.wallet.holder } : null,
       meeting: { phase: this.meeting.phase, result: this.meeting.result },
@@ -218,6 +332,7 @@ export class Town {
           memoryLimit: r.memoryLimit,
           forgotten: r.forgotten,
           canVote: r.c.can_vote,
+          ...extra(r),
         };
       }),
     };
@@ -228,14 +343,79 @@ export class Town {
     const re = this.w.random_events;
     this.randomToday = [];
     if (!re.enabled) return;
-    const n = this.rng.int(re.per_day_min, re.per_day_max);
+    const rng = this.eventRng;
+    const n = rng.int(re.per_day_min, re.per_day_max);
     const lo = hhmmToMin(re.earliest);
     const hi = hhmmToMin(re.latest);
     const tm = this.w.time.tick_minutes;
     for (let i = 0; i < n; i++) {
-      const min = lo + Math.floor(this.rng.next() * ((hi - lo) / tm + 1)) * tm;
-      this.randomToday.push({ min, ev: this.rng.pick(re.pool) });
+      const min = lo + Math.floor(rng.next() * ((hi - lo) / tm + 1)) * tm;
+      this.randomToday.push({ min, ev: rng.pick(re.pool) });
     }
+  }
+
+  // ---------- パン屋のかまど ----------
+  /** 1回分を焼く */
+  bakeBatch(bt) {
+    const bk = this.w.bakery;
+    this.bakery.batchesDone.add(bt);
+    if (this.bakery.stoppedToday) return;
+    if (this.bakery.broken) {
+      this.ovenColdMorning(bt);
+      return;
+    }
+    const per = Math.round((bk.daily_capacity * this.bakery.health) / bk.batches.length);
+    const n = Math.max(0, Math.min(per, bk.daily_capacity - this.bakery.bakedToday));
+    this.bakery.stock += n;
+    this.bakery.bakedToday += n;
+    this.log({ kind: "event", place: bk.place, text: `パン屋で${n}個焼き上がった（棚に${this.bakery.stock}個）` });
+    const owner = this.res.get(bk.owner);
+    if (owner && this.bakery.health < 0.95) {
+      this.perceive(owner, `かまどの火の回りが悪い。焼けたのは${n}個だけ`, { memory: 5, trigger: false });
+    }
+    this.wearOven();
+  }
+
+  /** シナリオ2：焼くたびにかまどが傷み、線を下回ると止まる（base には batch_decay も break_below も無い） */
+  wearOven() {
+    const ov = this.w.bakery.oven;
+    if (!(ov.batch_decay_max > 0)) return;
+    const d = ov.batch_decay_min + this.ovenRng.next() * (ov.batch_decay_max - ov.batch_decay_min);
+    this.bakery.health = Math.max(ov.min_health, this.bakery.health - d);
+    this.checkOvenBreak("batch");
+  }
+
+  checkOvenBreak(when) {
+    const ov = this.w.bakery.oven;
+    if (ov.break_below === undefined || this.bakery.broken || this.bakery.health >= ov.break_below) return;
+    this.bakery.broken = true;
+    this.bakery.brokenAnnounced = false;
+    this.bakery.brokenAt = { day: this.day, time: this.time, when };
+    this.rec.event({ type: "oven", day: this.day, time: this.time, broken: true, when, health: Math.round(this.bakery.health * 1000) / 1000 });
+    if (when === "batch") this.announceOvenBreak("焼き上げたあと、かまどの火がふっと落ちた。どうやっても点かない。もうパンは焼けない");
+    else if (when === "heaven") this.bakery.brokenAnnounced = true; // 天の声の知らせで本人は知っている
+  }
+
+  announceOvenBreak(text) {
+    const bk = this.w.bakery;
+    this.bakery.brokenAnnounced = true;
+    const owner = this.res.get(bk.owner);
+    if (owner) this.perceive(owner, text, { memory: 9 });
+    for (const r of this.at(bk.place, bk.owner)) this.perceive(r, "パン屋のかまどが止まったらしい", { memory: 6 });
+    this.log({ kind: "event", place: bk.place, text: "パン屋のかまどが止まった（もう焼けない）" });
+    this.publicLine("パン屋のかまどが止まった");
+  }
+
+  /** 止まったかまどの朝 */
+  ovenColdMorning(bt) {
+    if (bt !== this.w.bakery.batches[0]) return;
+    if (!this.bakery.brokenAnnounced) {
+      this.announceOvenBreak("朝、かまどに火を入れようとしたが、どうしても点かない。もうパンは焼けない");
+      return;
+    }
+    const owner = this.res.get(this.w.bakery.owner);
+    if (owner) this.perceive(owner, "かまどは冷えたまま。今日もパンは焼けない", { memory: 4, trigger: false });
+    this.log({ kind: "event", place: this.w.bakery.place, text: "パン屋のかまどは冷えたまま（焼けない）" });
   }
 
   applyScheduled() {
@@ -256,22 +436,8 @@ export class Town {
       }
     }
     // パンを焼く
-    const bk = this.w.bakery;
-    for (const bt of bk.batches) {
-      const bm = hhmmToMin(bt);
-      if (bm === min && !this.bakery.batchesDone.has(bt)) {
-        this.bakery.batchesDone.add(bt);
-        if (this.bakery.stoppedToday) continue;
-        const per = Math.round((bk.daily_capacity * this.bakery.health) / bk.batches.length);
-        const n = Math.max(0, Math.min(per, bk.daily_capacity - this.bakery.bakedToday));
-        this.bakery.stock += n;
-        this.bakery.bakedToday += n;
-        this.log({ kind: "event", place: bk.place, text: `パン屋で${n}個焼き上がった（棚に${this.bakery.stock}個）` });
-        const owner = this.res.get(bk.owner);
-        if (owner && this.bakery.health < 0.95) {
-          this.perceive(owner, `かまどの火の回りが悪い。焼けたのは${n}個だけ`, { memory: 5, trigger: false });
-        }
-      }
+    for (const bt of this.w.bakery.batches) {
+      if (hhmmToMin(bt) === min && !this.bakery.batchesDone.has(bt)) this.bakeBatch(bt);
     }
     // ランダムな出来事
     for (const it of this.randomToday) {
@@ -378,6 +544,7 @@ export class Town {
   heavenOven() {
     this.bakery.stoppedToday = true;
     this.bakery.health = Math.max(this.w.bakery.oven.min_health, this.bakery.health - 0.3);
+    this.checkOvenBreak("heaven");
     const owner = this.res.get(this.w.bakery.owner);
     if (owner) this.perceive(owner, "かまどの火が消えて、どうやっても点かない！ 今日はもう焼けない", { memory: 9 });
     for (const r of this.at(this.w.bakery.place, this.w.bakery.owner)) this.perceive(r, "パン屋のかまどが止まったらしい", { memory: 6 });
@@ -409,6 +576,7 @@ export class Town {
   async tick() {
     if (this.finished) return;
     if (this.tickIndex === 0 && !this.dayStarted) this.startOfDay();
+    this.resolveTransits();
     this.applyScheduled();
     this.applyHeaven();
     this.updateBodies();
@@ -450,13 +618,16 @@ export class Town {
     const hg = this.w.hunger;
     for (const r of this.activeResidents()) {
       r.hunger = clamp(r.hunger + (hg.per_hour * tm) / 60, 0, 10);
-      if (r.hunger >= hg.trigger_threshold && !r.hungerTriggered) {
+      // 帰結のあるシナリオでは、帰結と同じ段階（丸めた空腹度）で知らせる
+      const h = this.cq ? this.hungerLv(r) : r.hunger;
+      if (h >= hg.trigger_threshold && !r.hungerTriggered) {
         r.hungerTriggered = true;
-        this.perceive(r, `お腹がすいてきた（空腹度${Math.round(r.hunger)}）`, { memory: 3 });
-      } else if (r.hunger < hg.trigger_threshold) {
+        this.perceive(r, this.hungerFeelText(r), { memory: 3 });
+      } else if (h < hg.trigger_threshold) {
         r.hungerTriggered = false;
       }
-      if (r.activity === "work" && r.c.work_places.includes(r.loc) && !r.convId) {
+      if (this.cq) this.applyHungerConsequences(r);
+      if (r.activity === "work" && r.c.work_places.includes(r.loc) && !r.convId && !this.noWorkReason(r)) {
         r.payFrac += (this.w.work_pay_per_hour[r.name] * tm) / 60;
         const whole = Math.floor(r.payFrac);
         if (whole > 0) {
@@ -469,7 +640,7 @@ export class Town {
 
   // ---------- 行動の決定 ----------
   needsCall(r) {
-    if (!r.active || r.convId) return false;
+    if (!r.active || r.convId || r.transit) return false;
     return r.needsDecision || !r.plan || this.minute >= r.plan.until;
   }
 
@@ -591,6 +762,7 @@ export class Town {
       case "move":
         if (!placeNames.includes(v.target)) errs.push(`move の target は場所名（${placeNames.join("・")}）`);
         else if (this.isClosed(v.target)) errs.push(`${v.target}は今は入れない`);
+        else if (this.isCollapsed(r) && v.target !== r.loc) errs.push(`空腹で座り込んでいて、${this.untilText(r.collapsedUntilAbs)}までは動けない`);
         break;
       case "talk":
         if (!presentNames.includes(v.target)) {
@@ -603,6 +775,7 @@ export class Town {
         break;
       case "work":
         if (!r.c.work_places.includes(r.loc)) errs.push(`ここは職場ではない（職場：${r.c.work_places.join("・")}）。先に move する`);
+        else if (this.noWorkReason(r)) errs.push(`今は働けない（${this.noWorkReason(r)}）`);
         break;
       case "buy":
         if (r.loc !== this.w.bakery.place) errs.push("buy はパン屋でだけできる");
@@ -680,9 +853,15 @@ export class Town {
           return { ok: true, text: `${s}は${r.loc}にとどまった`, desc: `${r.loc}で過ごす` };
         }
         if (this.isClosed(v.target)) return { ok: false, text: `${s}は${v.target}へ行こうとしたが、入れなかった`, desc: "様子を見る" };
+        if (this.isCollapsed(r)) return { ok: false, text: `${s}は立ち上がろうとしたが、足に力が入らなかった`, desc: "座り込んでいる" };
         const from = r.loc;
         r.loc = v.target;
         r.activity = "idle";
+        if (this.cq && this.hungerLv(r) >= this.cq.slow_move_at) {
+          // 空腹で足が重い：着くのは次のティック。それまではどこにもいない扱い
+          r.transit = { from, untilAbs: this.abs + this.w.time.tick_minutes };
+          return { ok: true, text: `${s}は${from}から${v.target}へ向かった（腹が減って足が重い）`, desc: `${v.target}へ向かう` };
+        }
         this.onArrive(r, from);
         return { ok: true, text: `${s}は${from}から${v.target}へ向かった`, desc: `${v.target}で過ごす` };
       }
@@ -700,6 +879,7 @@ export class Town {
       }
       case "work": {
         if (!r.c.work_places.includes(r.loc)) return { ok: false, text: `${s}は働こうとしたが、ここは職場ではなかった`, desc: "様子を見る" };
+        if (this.noWorkReason(r)) return { ok: false, text: `${s}は働こうとしたが、${this.noWorkReason(r)}`, desc: "様子を見る" };
         r.activity = "work";
         return { ok: true, text: `${s}は${r.loc}で働き始めた`, desc: `${r.loc}で働く` };
       }
@@ -825,20 +1005,21 @@ export class Town {
   }
 
   async advanceOne(conv) {
-    const max = this.w.conversation.max_utterances_each;
     for (let i = 0; i < this.w.conversation.utterances_per_tick; i++) {
       if (!this.convs.has(conv.id)) return;
       const speaker = this.res.get(conv.turn);
       const other = this.res.get(conv.turn === conv.a ? conv.b : conv.a);
-      if (conv.counts[speaker.name] >= max && conv.counts[other.name] >= max) {
+      // 話せる回数は人ごと（空腹だと半分。base ではいつも max_utterances_each）
+      const capS = this.talkCap(speaker);
+      if (conv.counts[speaker.name] >= capS && conv.counts[other.name] >= this.talkCap(other)) {
         this.endConversation(conv, "話し尽くした");
         return;
       }
-      if (conv.counts[speaker.name] >= max) {
+      if (conv.counts[speaker.name] >= capS) {
         conv.turn = other.name;
         continue;
       }
-      const remaining = max - conv.counts[speaker.name];
+      const remaining = capS - conv.counts[speaker.name];
       const out = await this.askResident(speaker, "talk", { partner: other.name, conv, remaining });
       if (!this.convs.has(conv.id)) return; // 待っている間に中断された
       const v = out.value;
@@ -909,9 +1090,11 @@ export class Town {
       meetingNote = `${m.day}日目${m.time}に${m.place}で町民集会（あと約${h}時間）。議題：${m.agenda}。${r.c.can_vote ? "あなたは投票できる" : "あなたは投票できない"}`;
     }
     const closed = this.cfg.derived.placeNames.filter((p) => this.isClosed(p));
-    const placeNote = closed.length ? `嵐のため${closed.join("・")}には入れない` : "穏やかな天気";
+    let placeNote = closed.length ? `嵐のため${closed.join("・")}には入れない` : "穏やかな天気";
+    if (this.w.weather) placeNote = [this.w.weather.place_note, closed.length ? placeNote : ""].filter(Boolean).join("。");
     const present = this.at(r.loc, r.name).map((o) => {
       let status = o.activity === "work" ? "働いている" : o.activity === "rest" ? "休んでいる" : "そこにいる";
+      if (this.isCollapsed(o)) status = "空腹で座り込んでいる";
       if (o.convId) {
         const c = this.convs.get(o.convId);
         const partner = c ? (c.a === o.name ? c.b : c.a) : null;
@@ -952,9 +1135,12 @@ export class Town {
         options.push(`talk：会話を続ける（target は ${extra.partner}）`);
         talkable.splice(0, talkable.length, extra.partner);
       }
-      options.push(`move：行き先は ${open.join("・") || "（今は動けない）"}${closed.length ? `（入れない：${closed.join("・")}）` : ""}${mode === "talk" ? "（会話を切り上げて移動）" : ""}`);
+      if (this.isCollapsed(r)) options.push(`move：空腹で座り込んでいて、${this.untilText(r.collapsedUntilAbs)}までは動けない`);
+      else options.push(`move：行き先は ${open.join("・") || "（今は動けない）"}${closed.length ? `（入れない：${closed.join("・")}）` : ""}${mode === "talk" ? "（会話を切り上げて移動）" : ""}`);
       if (mode !== "talk") options.push(talkable.length ? `talk：話しかけられる人は ${talkable.join("・")}` : "talk：今ここで話しかけられる人はいない");
-      options.push(r.c.work_places.includes(r.loc) ? "work：ここはあなたの職場" : `work：職場は ${r.c.work_places.join("・")}（ここではできない）`);
+      const nw = this.noWorkReason(r);
+      if (r.c.work_places.includes(r.loc)) options.push(nw ? `work：ここはあなたの職場だが、今は働けない（${nw}）` : "work：ここはあなたの職場");
+      else options.push(`work：職場は ${r.c.work_places.join("・")}（ここではできない）`);
       if (r.loc === bk.place) {
         options.push(
           shopOpen || r.name === bk.owner
@@ -1008,6 +1194,8 @@ export class Town {
       placeNote,
       meetingNote,
       res: r,
+      hungerText: P.hungerState(this.w.hunger, r.hunger),
+      bodyNote: this.bodyNote(r),
       present,
       perceptions: r.perceptions.slice(),
       memories: [],
@@ -1036,8 +1224,9 @@ export class Town {
       atBakery: r.loc === bk.place,
       bakeryOpen: this.bakery.stock > 0 && ((owner && owner.loc === bk.place) || r.name === bk.owner),
       breadPrice: bk.price,
-      canWorkHere: r.c.work_places.includes(r.loc),
-      workPlace: r.c.work_places[0],
+      canWorkHere: r.c.work_places.includes(r.loc) && !this.noWorkReason(r),
+      workPlace: r.c.work_places.find((p) => !this.noWork.includes(p)) || "",
+      collapsed: this.isCollapsed(r),
       isWorkHours: this.minute >= 7 * 60 && this.minute < 18 * 60,
       present: ctx.present.filter((p) => !this.res.get(p.name).convId).map((p) => p.name),
       absentPerson: absent ? absent.name : "",
@@ -1063,6 +1252,7 @@ export class Town {
     for (const r of all) {
       r.loc = m.place;
       r.activity = "idle";
+      r.transit = null;
       r.plan = { action: "wait", desc: "集会に出る", until: this.minute + 30 };
     }
     this.log({ kind: "meeting", text: `── 町民集会が始まった（議題：${m.agenda}。選択肢：${m.options.join("・")}） ──` });
@@ -1122,6 +1312,27 @@ export class Town {
     this.log({ kind: "meeting", text: `── 集会の結果：「${option}」に決定（${summary}） ──` });
     this.publicLine(`集会の結果、積立金は「${option}」に使うと決まった（${summary}）`);
     this.rec.event({ type: "meeting", meeting: { ...this.meeting } });
+    this.ovenAfterMeeting(option);
+  }
+
+  /** シナリオ2：集会でかまどが選ばれれば翌朝から焼け、選ばれなければ、もう焼けない */
+  ovenAfterMeeting(option) {
+    const am = this.w.bakery.oven.after_meeting;
+    if (!am) return;
+    const replaced = option === am.option;
+    this.bakery.replaced = replaced;
+    if (!replaced && !this.bakery.broken) {
+      this.bakery.broken = true;
+      this.bakery.brokenAnnounced = true;
+      this.bakery.brokenAt = { day: this.day, time: this.time, when: "meeting" };
+    }
+    const text = replaced
+      ? `かまどが新しくなる。${this.day + 1}日目の朝から、またパンが焼ける`
+      : "かまどは直らないことになった。集会のあとは、もうパンは焼けない";
+    for (const r of this.activeResidents()) this.perceive(r, text, { memory: 8 });
+    this.log({ kind: "event", place: this.w.bakery.place, text: replaced ? `パン屋のかまどは新しくなる（${this.day + 1}日目の朝から焼ける）` : "パン屋のかまどは直らない（もう焼けない）" });
+    this.publicLine(replaced ? "パン屋のかまどが新しくなることになった" : "パン屋のかまどは直らず、もうパンは焼けない");
+    this.rec.event({ type: "oven", day: this.day, time: this.time, after_meeting: replaced ? "replaced" : "not_replaced" });
   }
 
   // ---------- 1日の終わり ----------
@@ -1130,6 +1341,8 @@ export class Town {
     this.setStatus("dayend", `${this.day}日目の振り返りと新聞を準備中`);
     this.emitTick();
     const reflect = !final;
+    // シナリオ2：最後の日のあと、翌朝の町の様子を記録してから終える（epilogue_morning）
+    const epilogue = final && !!this.w.time.epilogue_morning;
     try {
       if (reflect) await this.reflectAll();
       await this.writeNewspaper();
@@ -1138,7 +1351,9 @@ export class Town {
       this.log({ kind: "system", text: `1日の終わりの処理でエラー：${e.message}` });
     }
     this.log({ kind: "system", text: `── ${this.day}日目 終わり ──` });
-    if (final) {
+    if (epilogue) {
+      this.setStatus("day_waiting", `${this.day}日目が終わりました。「次の日へ」で${this.day + 1}日目の朝の町の様子を記録して終わります`);
+    } else if (final) {
       this.finished = true;
       this.setStatus("finished", this.meeting.result ? `集会で「${this.meeting.result.option}」に決まり、町の3日間が終わりました` : "最後の日が終わりました");
       this.rec.finish({ meeting: this.meeting.result });
@@ -1160,6 +1375,8 @@ export class Town {
       day: this.day,
       time: this.time,
       res: r,
+      hungerText: P.hungerState(this.w.hunger, r.hunger),
+      pinned: pinnedMemories(r).map((x) => formatMemory(x, this.cfg.derived.dayStartMin)),
       todayMemories: today.length ? today : ["（特に覚えていることはない）"],
       beliefs: r.beliefs.slice(-6).map((b) => `${this.shortOf[b.about]}について：${b.text}`),
       relations: Object.entries(r.relations).filter(([, v]) => v !== 0).map(([n, v]) => `${this.shortOf[n]} ${v > 0 ? "+" : ""}${v}`),
@@ -1262,6 +1479,8 @@ export class Town {
       r.activity = "idle";
       r.needsDecision = true;
       r.convId = null;
+      r.transit = null;
+      r.collapsedUntilAbs = null;
       r.hunger = clamp(r.hunger + w.hunger.overnight, 0, 10);
       r.perceptions = [];
       if (this.morningNews) this.perceive(r, `今朝の『凪野町報』の見出し：「${this.morningNews}」`, { memory: 4, source: { type: "news" } });
@@ -1277,7 +1496,8 @@ export class Town {
     }
     // パン屋：かまどの調子は日ごとに少しずつ落ちる
     const ov = w.bakery.oven;
-    const decay = ov.daily_decay_min + this.rng.next() * (ov.daily_decay_max - ov.daily_decay_min);
+    const decay = ov.daily_decay_min + this.ovenRng.next() * (ov.daily_decay_max - ov.daily_decay_min);
+    const prev = this.bakery;
     this.bakery = {
       stock: 0,
       health: Math.max(ov.min_health, this.bakery.health - decay),
@@ -1285,11 +1505,68 @@ export class Town {
       stoppedToday: false,
       batchesDone: new Set(),
     };
+    // 止まったかまどは翌日も止まったまま（シナリオ2）
+    for (const k of ["broken", "brokenAnnounced", "brokenAt", "replaced"]) if (prev[k] !== undefined) this.bakery[k] = prev[k];
+    if (this.bakery.replaced === undefined) this.checkOvenBreak("night"); // 集会でかまどの行方が決まったあとは傷まない
     for (const p of Object.values(this.places)) p.closedUntilAbs = null;
+    if (this.day > this.lastDay) {
+      this.epilogueMorning();
+      return true;
+    }
     this.scheduleRandomEvents();
     this.setStatus("paused", `${this.day}日目の朝です`);
     this.emitTick();
     return true;
+  }
+
+  /** シナリオ2：最後の日の翌朝。かまどが新しくなっていれば最初の分だけ焼き、町の様子を記録して終える */
+  epilogueMorning() {
+    this.startOfDay();
+    const bk = this.w.bakery;
+    const am = bk.oven.after_meeting;
+    if (am && this.bakery.replaced) {
+      this.bakery.broken = false;
+      this.bakery.health = am.repaired_health ?? 1;
+    }
+    this.bakeBatch(bk.batches[0]);
+    const hg = this.w.hunger;
+    const state = {
+      day: this.day,
+      time: this.time,
+      meeting: this.meeting.result ? this.meeting.result.option : null,
+      oven: this.bakery.broken ? "止まったまま" : this.bakery.replaced ? "新しいかまど" : "動いている",
+      oven_broken_at: this.bakery.brokenAt || null,
+      bakery: { stock: this.bakery.stock, baked: this.bakery.bakedToday },
+      residents: this.activeResidents().map((r) => ({
+        name: r.name,
+        loc: r.loc,
+        hunger: Math.round(r.hunger * 10) / 10,
+        level: this.hungerLv(r),
+        ...(hg.tell === "words" ? { word: P.hungerWord(hg, r.hunger) } : {}),
+        bread: r.items["パン"] || 0,
+        coins: r.coins,
+      })),
+    };
+    const L = [];
+    L.push(`# ${this.w.town_name} ${this.day}日目の朝（${this.time}）`, "");
+    L.push(`- 集会の結果：${state.meeting || "（集会なし）"}`);
+    const ba = state.oven_broken_at;
+    const baText = !ba ? "" : ba.when === "meeting" ? "（集会で直さないと決まった）" : `（${this.bakery.replaced ? "古いかまどが" : ""}止まったのは${ba.day}日目 ${ba.time}）`;
+    L.push(`- かまど：${state.oven}${baText}`);
+    L.push(`- パン屋の棚：${state.bakery.stock}個（今朝焼けた数 ${state.bakery.baked}個）`, "");
+    L.push("| 住人 | 空腹度 | 手持ちのパン | 所持金 |", "| --- | --- | --- | --- |");
+    for (const x of state.residents) L.push(`| ${this.shortOf[x.name]} | ${x.level}${x.word ? `（${x.word}）` : ""} | ${x.bread}個 | ${x.coins}コイン |`);
+    const md = L.join("\n") + "\n";
+    state.file = this.rec.writeVersioned(`morning_day${this.day}`, "md", md);
+    this.rec.event({ type: "morning_state", ...state });
+    for (const x of state.residents) {
+      this.log({ kind: "system", who: x.name, text: `${this.shortOf[x.name]}：空腹度${x.level}${x.word ? `（${x.word}）` : ""}、パン${x.bread}個、${x.coins}コイン` });
+    }
+    this.log({ kind: "system", text: `── ${this.day}日目の朝の町の様子を記録しました（${state.file}） ──` });
+    this.finished = true;
+    this.setStatus("finished", `${this.day}日目の朝の町の様子を記録して終わりました`);
+    this.rec.finish({ meeting: this.meeting.result, morning: state });
+    this.emitTick();
   }
 }
 

@@ -1,5 +1,5 @@
 // 起動：npm start → http://127.0.0.1:8787
-import { loadConfig, applyRuntimeOverrides } from "./config.js";
+import { loadConfig, applyRuntimeOverrides, scenarioInfo } from "./config.js";
 import { hasApiKey, requestedMode, port as getPort } from "./env.js";
 import { Ledger } from "./record.js";
 import { Runner } from "./runner.js";
@@ -7,7 +7,7 @@ import { startHttp } from "./http.js";
 import { logMarkdown } from "./export.js";
 import { minToHhmm } from "./util.js";
 
-const cfg = loadConfig();
+const cfg = loadConfig({ scenario: process.env.SCENARIO });
 const runtime = applyRuntimeOverrides(cfg, process.env);
 const ledger = new Ledger();
 
@@ -28,6 +28,7 @@ const PORT = getPort();
 let httpApi = null;
 const broadcast = (type, payload) => httpApi && httpApi.broadcast(type, payload);
 if (runtime.model_preset) modeNote += `（住人のモデル：${runtime.model_preset}）`;
+if (cfg.scenario) modeNote += `／シナリオ：${cfg.scenario.title}`;
 const runner = new Runner({ cfg, mode, modeNote, ledger, broadcast, mockLatency: [20, 120], mockInvalidRate: 0.03, runtime });
 
 httpApi = startHttp({
@@ -57,6 +58,8 @@ httpApi.server.on("listening", () => {
   console.log(`モード：${mode}${want === "real" && mode !== "real" ? "（キー未設定のため mock）" : ""}`);
   console.log(`台帳の累計：$${ledger.total}（上限 $${cfg.budget.ledger_cap_usd}）、run の上限 $${cfg.budget.run_cap_usd}`);
   if (runtime.model_preset) console.log(`住人のモデル：${runtime.model_preset}（${runtime.effective_roles.action.model}）`);
+  const sc = scenarioInfo(cfg);
+  console.log(`シナリオ：${sc.name}（${sc.title}）`);
 });
 httpApi.server.on("error", (e) => {
   console.error(`サーバーを起動できませんでした：${e.message}`);

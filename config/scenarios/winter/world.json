@@ -1,0 +1,62 @@
+{
+  "_note": "シナリオ2（冬の町）。base の world.json に重ねる差分。かまどとランダムな出来事は、住人の動きと切り離した乱数で決める（条件A・Bで同じになるように）。",
+  "time": {
+    "end_after_meeting": false,
+    "epilogue_morning": true
+  },
+  "weather": {
+    "label": "冬の嵐",
+    "place_note": "冬の嵐が続いている。港は荒れて仕事にならない",
+    "no_work_places": ["港"],
+    "no_work_note": "冬の嵐で港は閉ざされ、仕事にならない"
+  },
+  "rules_extra": [
+    "1日目の朝から冬の嵐が続き、港は閉ざされている。漁には出られない。港へ行くことはできるが、仕事にならない。",
+    "パン屋のかまどが直らなければ、集会のあとはパンが焼けない。",
+    "町の外から食べ物は届かない。"
+  ],
+  "bakery": {
+    "daily_capacity": 24,
+    "oven": {
+      "_note": "焼くたびに batch_decay、夜に daily_decay だけ傷み、break_below を下回ると止まる（止まったら直らない）。集会で after_meeting.option が選ばれれば翌朝から新しいかまどで焼ける。",
+      "independent_rng": true,
+      "daily_decay_min": 0,
+      "daily_decay_max": 0.08,
+      "batch_decay_min": 0.03,
+      "batch_decay_max": 0.09,
+      "min_health": 0,
+      "break_below": 0.45,
+      "after_meeting": { "option": "パン屋の新しいかまど", "repaired_health": 1.0 }
+    }
+  },
+  "hunger": {
+    "tell": "number",
+    "words": [
+      { "max": 3, "text": "腹は満ちている" },
+      { "max": 6, "text": "少し腹が減ってきた" },
+      { "max": 8, "text": "腹が鳴って、考えがまとまらない" },
+      { "max": 9, "text": "目が回る。立っているのもつらい" },
+      { "max": 10, "text": "もう一歩も動けない" }
+    ],
+    "consequences": {
+      "_note": "空腹度（四捨五入した値）で判定する。slow_move_at 以上で移動に1ティック余計にかかり、half_talk_at 以上で会話の発言数が半分、no_work_at 以上で働けない。collapse_at に達するとその場に座り込み、collapse_ticks のあいだ動けない。",
+      "slow_move_at": 8,
+      "half_talk_at": 8,
+      "no_work_at": 10,
+      "collapse_at": 10,
+      "collapse_ticks": 8
+    }
+  },
+  "random_events": {
+    "independent_rng": true,
+    "pool": [
+      { "place": "港", "text": "港で、高波に舫い綱が一本切られた" },
+      { "place": "広場", "text": "カモメが広場のベンチに置かれた包みをさらっていった" },
+      { "place": "図書館", "text": "図書館に差出人の書かれていない古い写真の束が寄贈された" },
+      { "place": "酒場「潮だまり」", "text": "酒場の古い柱時計が急に止まった" },
+      { "place": "住宅通り", "text": "住宅通りで迷い猫が鳴いている" },
+      { "place": "広場", "text": "広場の掲示板に、集会のお知らせが貼り直されていた" },
+      { "place": "港", "text": "沖は白く荒れて、船影ひとつ見えない" }
+    ]
+  }
+}

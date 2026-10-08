@@ -1,7 +1,8 @@
 // 画面なしで mock の町を最後まで走らせる確認用スクリプト（API は呼ばない）。
 // 使い方：npm run headless            … 記録はメモリ上だけ
 //         npm run headless -- --record … runs/ に記録を残す（再生モードの確認用）
-import { loadConfig } from "../server/config.js";
+//         SCENARIO=winter npm run headless … シナリオを選ぶ（config/scenarios/）
+import { loadConfig, configSnapshot, scenarioInfo } from "../server/config.js";
 import { LlmGateway } from "../server/llm/gateway.js";
 import { Town } from "../server/sim/town.js";
 import { RunRecorder } from "../server/record.js";
@@ -35,18 +36,25 @@ class MemoryRecorder {
   finish() {}
 }
 
-const cfg = loadConfig();
+const cfg = loadConfig({ scenario: process.env.SCENARIO });
 if (seedArg) cfg.world.seed = Number(seedArg.split("=")[1]);
+const sc = scenarioInfo(cfg);
 const ledger = { total: 0, add() {} };
-const rec = record ? new RunRecorder({ kind: "sim", mode: "mock", extraMeta: { seed: cfg.world.seed, headless: true } }) : new MemoryRecorder();
+const rec = record
+  ? new RunRecorder({ kind: "sim", mode: "mock", extraMeta: { seed: cfg.world.seed, scenario: sc.name, scenario_title: sc.title, scenario_chain: sc.chain, headless: true }, configFiles: configSnapshot(cfg) })
+  : new MemoryRecorder();
 const gw = new LlmGateway({ cfg, mode: "mock", recorder: rec, ledger, mockLatency: [0, 0] });
 const kinds = {};
+const logs = [];
 const town = new Town({
   cfg,
   gateway: gw,
   recorder: rec,
   emit: (type, p) => {
-    if (type === "log") kinds[p.kind] = (kinds[p.kind] || 0) + 1;
+    if (type === "log") {
+      kinds[p.kind] = (kinds[p.kind] || 0) + 1;
+      logs.push(p);
+    }
   },
   mockInvalidRate: 0.03,
 });
@@ -69,6 +77,7 @@ while (!town.finished) {
 
 const snap = town.snapshot();
 const st = gw.stats;
+console.log(`シナリオ：${sc.name}（${sc.title}） 種 ${cfg.world.seed}`);
 console.log(`ticks=${ticks} 終了=${town.status} (${town.statusReason}) 所要=${Date.now() - t0}ms`);
 console.log(`呼び出し：論理${st.requests}回 / 送信${st.calls}回 / 1回目で合格${st.validFirst} / 再試行で合格${st.validRetry} / 失敗→wait ${st.failed}`);
 console.log("役割別：", JSON.stringify(st.byRole));
@@ -79,5 +88,11 @@ for (const r of snap.residents) {
   console.log(`  ${r.short}: ${r.loc} コイン${r.coins} 空腹${r.hunger} パン${r.items["パン"]} 記憶${r.memoryCount}/${r.memoryLimit}(忘${r.forgotten}) 思い込み${r.beliefs.length} 気分${r.mood}`);
 }
 console.log("新聞：", Object.keys(town.newspapers).map((d) => `${d}日目=${town.newspapers[d].file}`).join(", "));
+if (cfg.scenario) {
+  const count = (re) => logs.filter((l) => re.test(l.text || "")).length;
+  const oven = logs.filter((l) => /かまど|焼き上がった/.test(l.text || "")).map((l) => `${l.day}日${l.time} ${l.text}`);
+  console.log(`シナリオの帰結：座り込み ${count(/座り込んだ/)} 回、足が重い移動 ${count(/足が重い/)} 回、働けなかった ${count(/働こうとしたが/)} 回`);
+  console.log("かまど：\n  " + oven.join("\n  "));
+}
 if (rec instanceof MemoryRecorder) console.log("記録：", JSON.stringify(rec.counts));
 else console.log("記録先：", rec.dir);

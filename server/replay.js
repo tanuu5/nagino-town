@@ -53,7 +53,8 @@ export class Replayer {
   hello() {
     return {
       mode: "replay",
-      modeNote: `再生モード：${this.runId}（${this.meta.mode || "?"} の記録。API は呼びません）`,
+      modeNote: `再生モード：${this.runId}（${this.meta.mode || "?"} の記録。API は呼びません）${this.meta.scenario && this.meta.scenario !== "base" ? `／シナリオ：${this.meta.scenario_title || this.meta.scenario}` : ""}`,
+      scenario: { name: this.meta.scenario || "base", title: this.meta.scenario_title || "いつもの町", chain: this.meta.scenario_chain || [] },
       replay: { run: this.runId, ticksTotal: this.ticksTotal, ticksDone: this.ticksDone, playing: this.playing },
       run: this.runId,
       speed: this.speed,

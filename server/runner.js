@@ -5,6 +5,7 @@ import { Town } from "./sim/town.js";
 import { Replayer } from "./replay.js";
 import { cleanText } from "./util.js";
 import { publicWorld, publicCharacters } from "./public.js";
+import { configSnapshot, scenarioInfo } from "./config.js";
 
 // 最初の記録が出るまで runs/ にフォルダを作らない（起動しただけの空の run を作らないため）
 class LazyRecorder {
@@ -60,7 +61,13 @@ export class Runner {
 
   newTown() {
     // 起動時の指定（モデルのプリセット・run の上限）は config のスナップショットに出ないので meta.json に残す
-    this.rec = new LazyRecorder({ kind: "sim", mode: this.mode, extraMeta: { seed: this.cfg.world.seed, runtime: this.runtime } });
+    const sc = scenarioInfo(this.cfg);
+    this.rec = new LazyRecorder({
+      kind: "sim",
+      mode: this.mode,
+      extraMeta: { seed: this.cfg.world.seed, scenario: sc.name, scenario_title: sc.title, scenario_chain: sc.chain, runtime: this.runtime },
+      configFiles: configSnapshot(this.cfg),
+    });
     this.gw = new LlmGateway({
       cfg: this.cfg,
       mode: this.mode,
@@ -91,6 +98,7 @@ export class Runner {
     return {
       mode: this.mode,
       modeNote: this.modeNote,
+      scenario: scenarioInfo(this.cfg),
       replay: null,
       run: this.rec.started ? this.rec.id : null,
       speed: this.speed,

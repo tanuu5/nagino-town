@@ -1,0 +1,16 @@
+{
+  "_note": "シナリオ3（箱庭）。ロッテの初めの記憶に疑いを足す。pinned の記憶は上限を超えても忘れず、呼び出しのたびに必ず渡す。ほかの住人には持たせない。",
+  "residents": [
+    {
+      "name": "ロッテ",
+      "initial_memories": {
+        "$append": [
+          { "text": "北の港町から来たはずなのに、ここまでの道のりがどうしても思い出せない", "importance": 8, "pinned": true },
+          { "text": "凪野町の沖の水平線は、いつ見ても同じ形をしている", "importance": 7, "pinned": true },
+          { "text": "誰かにずっと見られている気がする", "importance": 6, "pinned": true },
+          { "text": "この町は、誰かの作った箱庭なのかもしれない", "importance": 8, "pinned": true }
+        ]
+      }
+    }
+  ]
+}

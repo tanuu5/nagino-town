@@ -57,6 +57,21 @@ export function mockAction(h, rng, attempt) {
     o.action = "eat";
     return o;
   }
+  if (h.collapsed) {
+    // 空腹で座り込んでいる（シナリオ2）：動けないので、その場で買うか、人に頼むか、休む
+    if (h.atBakery && h.bakeryOpen && h.coins >= h.breadPrice) {
+      o.action = "buy";
+      o.item = "パン";
+      o.amount = 1;
+    } else if (h.present.length && rng.chance(0.5)) {
+      o.action = "talk";
+      o.target = rng.pick(h.present);
+      o.say = "…腹が減って、もう動けない。パン、ないか";
+    } else {
+      o.action = "rest";
+    }
+    return o;
+  }
   if (h.hunger >= 6 && h.bread === 0) {
     if (h.atBakery && h.bakeryOpen && h.coins >= h.breadPrice) {
       o.action = "buy";
@@ -129,7 +144,8 @@ export function mockTalk(h, rng, attempt) {
     o.say = rng.pick(fl(h.name).talk);
     return o;
   }
-  o.action = rng.chance(0.5) ? "wait" : "move";
+  const stay = rng.chance(0.5);
+  o.action = stay || h.collapsed ? "wait" : "move";
   if (o.action === "move") {
     const dests = h.openPlaces.filter((p) => p !== h.loc);
     o.target = dests.length ? rng.pick(dests) : "";

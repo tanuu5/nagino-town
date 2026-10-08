@@ -117,6 +117,12 @@ function onHello(h) {
   modeEl.className = `mode ${h.mode}`;
   modeEl.title = h.modeNote || "";
   $("stage-note").textContent = h.modeNote || "";
+  // シナリオ（base のときは出さない）
+  const sc = h.scenario;
+  const scEl = $("scenario");
+  scEl.hidden = !sc || sc.name === "base";
+  scEl.textContent = sc ? sc.title : "";
+  scEl.title = sc && sc.description ? sc.description : "";
   // ログの絞り込み
   const sel = $("log-filter");
   clear(sel);
@@ -162,7 +168,7 @@ const STATUS_LABEL = {
   paused: "一時停止中",
   dayend: "1日の終わり：振り返りと新聞を準備中…",
   day_waiting: "1日が終わりました。「次の日へ」で進みます",
-  finished: "町の3日間が終わりました",
+  finished: "終わりました",
   stopped: "停止しました",
   replay: "再生中",
 };
@@ -453,9 +459,9 @@ function renderCard(name) {
     .map(([k, v]) => `${k}${v}`)
     .join("、");
   grid.append(
-    stat("いる場所", r.active ? r.loc : "（まだ町にいない）"),
+    stat("いる場所", r.active ? `${r.loc}${r.transit ? "（へ向かう途中）" : ""}${r.collapsedUntil ? `（空腹で座り込み・${r.collapsedUntil}まで）` : ""}` : "（まだ町にいない）"),
     stat("所持金", `${r.coins} コイン`),
-    stat("空腹度", `${r.hunger} / 10`, r.hunger / 10),
+    stat("空腹度", `${r.hunger} / 10${r.hungerWord ? `（${r.hungerWord}）` : ""}`, r.hunger / 10),
     stat("パン", `${r.items["パン"] || 0} 個${items ? `（ほか：${items}）` : ""}`),
     stat("気分", r.mood),
     stat("記憶", `${r.memoryCount} / ${r.memoryLimit} 件（忘れた ${r.forgotten}）`),

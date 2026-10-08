@@ -241,7 +241,8 @@ export class TownMap {
         const pts = [[cur.x, cur.y], from.door, ...mid, to.door, [target.x, target.y]];
         cur.path = pts;
         cur.t0 = now;
-        cur.dur = Math.max(500, Math.min(2600, this.tickMs * 0.85));
+        // 空腹で足が重い人（シナリオ2）は、着くのが次のティックなので、ゆっくり歩かせる
+        cur.dur = r.transit ? Math.max(900, Math.min(5200, this.tickMs * 1.7)) : Math.max(500, Math.min(2600, this.tickMs * 0.85));
         cur.loc = r.loc;
       } else if (!cur.path.length) {
         // 同じ場所の中での並び替え：ゆっくり寄せる
@@ -419,7 +420,28 @@ export class TownMap {
       ctx.textBaseline = "middle";
       ctx.fillText(p.sign, x + 19, y + 22);
       if (p.name === this.world.bakery.place && snap) {
-        this.label(x + w - 54, y + 22, `パン ${snap.bakery.stock}個`, 13, snap.bakery.stopped ? "#c0432a" : "#55606d");
+        const bk = snap.bakery;
+        this.label(x + w - 54, y + 22, `パン ${bk.stock}個`, 13, bk.stopped || bk.broken ? "#c0432a" : "#55606d");
+        // シナリオ2：止まったかまど（看板の下に）
+        if (bk.broken) this.label(x + w - 54, y + 41, "かまど停止", 12, "#ffffff", "rgba(192,67,42,0.88)");
+      }
+      // 冬の嵐（シナリオ2）：行けるが仕事にならない場所
+      if (snap && snap.weather && snap.weather.noWork.includes(p.name) && !(snap.places[p.name] && snap.places[p.name].closed)) {
+        ctx.save();
+        rr(ctx, x, y, w, h, 14);
+        ctx.clip();
+        ctx.fillStyle = "rgba(90,110,140,0.16)";
+        ctx.fillRect(x, y, w, h);
+        ctx.strokeStyle = "rgba(255,255,255,0.55)";
+        ctx.lineWidth = 1.5;
+        for (let k = -h; k < w; k += 26) {
+          ctx.beginPath();
+          ctx.moveTo(x + k + h * 0.35, y);
+          ctx.lineTo(x + k, y + h);
+          ctx.stroke();
+        }
+        ctx.restore();
+        this.label(x + w - 120, y + h - 18, `${snap.weather.label}：仕事にならない`, 13, "#ffffff", "rgba(30,58,95,0.78)");
       }
       if (snap && snap.places[p.name] && snap.places[p.name].closed) {
         ctx.save();
@@ -493,7 +515,7 @@ export class TownMap {
         ctx.textBaseline = "middle";
         ctx.fillText(r.initial, p.x, p.y + 1);
         // 名前と状態
-        const tag = r.activity === "work" ? "・仕事" : r.activity === "rest" ? "・休憩" : "";
+        const tag = r.collapsedUntil ? "・座り込み" : r.transit ? "・移動中" : r.activity === "work" ? "・仕事" : r.activity === "rest" ? "・休憩" : "";
         this.label(p.x, p.y + 27, r.short + tag, 11, "#1d2733", "rgba(251,248,240,0.85)");
       }
     }

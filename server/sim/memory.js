@@ -27,7 +27,7 @@ export function sourceLabel(src) {
   }
 }
 
-export function addMemory(res, { day, minute, text, importance, source, kind = "memory" }, limits) {
+export function addMemory(res, { day, minute, text, importance, source, kind = "memory", pinned = false }, limits) {
   const item = {
     id: nextId++,
     day,
@@ -38,6 +38,8 @@ export function addMemory(res, { day, minute, text, importance, source, kind = "
     source,
     kind,
   };
+  // 忘れない記憶（シナリオ3）：上限を超えても忘れず、呼び出しのたびに必ず渡す。base の住人には無い
+  if (pinned) item.pinned = true;
   if (!item.text) return null;
   res.memory.push(item);
   forget(res);
@@ -48,7 +50,7 @@ export function addMemory(res, { day, minute, text, importance, source, kind = "
 function forget(res) {
   const limit = res.memoryLimit;
   if (res.memory.length <= limit) return;
-  const sorted = res.memory.slice().sort((a, b) => a.importance - b.importance || a.abs - b.abs);
+  const sorted = res.memory.filter((m) => !m.pinned).sort((a, b) => a.importance - b.importance || a.abs - b.abs);
   const drop = new Set(sorted.slice(0, res.memory.length - limit).map((m) => m.id));
   res.forgotten += drop.size;
   res.memory = res.memory.filter((m) => !drop.has(m.id));
@@ -60,7 +62,9 @@ function forget(res) {
  */
 export function retrieve(res, { nowAbs, place, people }, k, w, aliases) {
   const keys = [place, ...people.flatMap((n) => aliases[n] || [n])].filter(Boolean);
-  const scored = res.memory.map((m) => {
+  // 忘れない記憶は点数に関係なく先に入れ、残りの枠を点数の高い順に埋める
+  const pinned = res.memory.filter((m) => m.pinned).slice(0, k);
+  const scored = res.memory.filter((m) => !m.pinned).map((m) => {
     const ageH = Math.max(0, (nowAbs - m.abs) / 60);
     const recency = Math.pow(0.5, ageH / w.recency_half_life_hours);
     const rel = keys.some((key) => m.text.includes(key)) ? 1 : 0;
@@ -68,10 +72,12 @@ export function retrieve(res, { nowAbs, place, people }, k, w, aliases) {
     return { m, score };
   });
   scored.sort((a, b) => b.score - a.score);
-  return scored
-    .slice(0, k)
-    .map((s) => s.m)
-    .sort((a, b) => a.abs - b.abs);
+  return [...pinned, ...scored.slice(0, k - pinned.length).map((s) => s.m)].sort((a, b) => a.abs - b.abs);
+}
+
+/** 忘れない記憶（振り返りにも渡す） */
+export function pinnedMemories(res) {
+  return res.memory.filter((m) => m.pinned);
 }
 
 export function formatMemory(m, dayStartMin) {

@@ -9,7 +9,7 @@ import { readConfigFiles } from "./config.js";
 export const RUN_ID_RE = /^\d{8}-\d{6}$/;
 
 export class RunRecorder {
-  constructor({ kind, mode, extraMeta = {} }) {
+  constructor({ kind, mode, extraMeta = {}, configFiles = null }) {
     fs.mkdirSync(RUNS_DIR, { recursive: true });
     let d = new Date();
     let id = nowStamp(d);
@@ -19,9 +19,14 @@ export class RunRecorder {
     }
     this.id = id;
     this.dir = path.join(RUNS_DIR, id);
-    fs.mkdirSync(path.join(this.dir, "config"), { recursive: true });
-    for (const [name, text] of Object.entries(readConfigFiles())) {
-      fs.writeFileSync(path.join(this.dir, "config", name), text);
+    const cdir = path.join(this.dir, "config");
+    fs.mkdirSync(cdir, { recursive: true });
+    // 名前は設定のファイル名（base/・scenario/（名前）/ の下を含む）だけ。.. や絶対パスは受け付けない
+    for (const [name, text] of Object.entries(configFiles || readConfigFiles())) {
+      const file = path.join(cdir, name);
+      if (!file.startsWith(cdir + path.sep) || !/^[a-z0-9/_.-]+\.json$/.test(name) || name.includes("..")) continue;
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.writeFileSync(file, text);
     }
     this.writeJson("meta.json", {
       run: id,
