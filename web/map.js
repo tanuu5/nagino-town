@@ -529,14 +529,22 @@ export class TownMap {
     // 吹き出し
     this.bubbles = this.bubbles.filter((b) => b.until > now);
     const placed = [];
-    // 新しい吹き出しを優先して置き、重なる古いものはずらす
+    // 新しい吹き出しを優先して置き、重なる古いものはずらす。
+    // 同じ場所で会話がいくつも重なると地図が埋まるので、場所ごとに新しいものから数個だけ出す
     const order = this.bubbles.slice().sort((a, b) => b.born - a.born);
+    const shown = {};
+    const limit = { say: 2, meeting: 3, thought: 1 };
     for (const b of order) {
       if (b.kind === "thought" && !this.showThought) continue;
       const p = this.pos[b.who];
       if (!p) continue;
+      const r = snap && snap.residents.find((o) => o.name === b.who);
+      const key = `${r ? r.loc : "?"}:${b.kind}`;
+      shown[key] = (shown[key] || 0) + 1;
+      if (shown[key] > (limit[b.kind] || 3)) continue;
       const alpha = Math.min(1, (b.until - now) / 500, (now - b.born) / 200);
-      this.drawBubble(p.x, p.y, b.text, b.kind, alpha, placed);
+      const avoid = Object.entries(this.pos).filter(([n]) => n !== b.who && snap && snap.residents.some((o) => o.name === n && o.active)).map(([, q]) => q);
+      this.drawBubble(p.x, p.y, b.text, b.kind, alpha, placed, avoid);
     }
   }
 
@@ -579,26 +587,55 @@ export class TownMap {
     ctx.fillText(text, x, y);
   }
 
-  drawBubble(x, y, text, kind, alpha, placed) {
+  drawBubble(x, y, text, kind, alpha, placed, avoid) {
     const ctx = this.ctx;
     const thought = kind === "thought";
     const meeting = kind === "meeting";
     ctx.save();
     ctx.globalAlpha = Math.max(0, alpha);
     ctx.font = `${thought ? 500 : 700} 13px ${FONT}`;
-    const lines = wrap(ctx, text, 200, 3);
+    const lines = wrap(ctx, text, 184, 3);
     const w = Math.max(...lines.map((l) => ctx.measureText(l).width)) + 18;
     const h = lines.length * 18 + 10;
-    let bx = Math.max(6, Math.min(this.W - w - 6, x - w / 2));
-    let by = thought ? y + 36 : y - 26 - h;
-    if (by < 4) by = y + 36;
-    // ほかの吹き出しと重なるなら、上（内心は下）へずらす
-    for (let guard = 0; guard < 8; guard++) {
+    const W = this.W;
+    const H = this.H;
+    const cx = Math.max(6, Math.min(W - w - 6, x - w / 2));
+    // 置き場所の候補：上・下・右・左（内心は下を先に）。ほかの吹き出しと住人（名前の札を含む）に重ならない所を選ぶ
+    const above = { bx: cx, by: y - 26 - h, side: "above" };
+    const below = { bx: cx, by: y + 38, side: "below" };
+    const right = { bx: x + 24, by: y - h / 2, side: "right" };
+    const left = { bx: x - 24 - w, by: y - h / 2, side: "left" };
+    const above2 = { bx: cx, by: y - 26 - 2 * h - 6, side: "above" };
+    const below2 = { bx: cx, by: y + 38 + h + 6, side: "below" };
+    const cands = thought ? [below, right, left, above, below2, above2] : [above, below, right, left, above2, below2];
+    const self = { x, y };
+    const hits = (bx, by) => {
+      let n = 0;
+      for (const q of placed) if (bx < q.x + q.w && bx + w > q.x && by < q.y + q.h && by + h > q.y) n += 10;
+      for (const a of avoid) if (a.x + 16 > bx && a.x - 16 < bx + w && a.y + 34 > by && a.y - 16 < by + h) n += 3;
+      if (self.x + 16 > bx && self.x - 16 < bx + w && self.y + 30 > by && self.y - 16 < by + h) n += 8;
+      if (bx < 2 || by < 2 || bx + w > W - 2 || by + h > H - 2) n += 6;
+      return n;
+    };
+    let best = cands[0];
+    let bestScore = Infinity;
+    for (const c of cands) {
+      const sc = hits(c.bx, c.by);
+      if (sc < bestScore) {
+        best = c;
+        bestScore = sc;
+      }
+    }
+    let bx = best.bx;
+    let by = best.by;
+    // それでもほかの吹き出しと重なるなら、上下にずらす
+    for (let guard = 0; guard < 8 && bestScore >= 10; guard++) {
       const hitB = placed.find((q) => bx < q.x + q.w && bx + w > q.x && by < q.y + q.h && by + h > q.y);
       if (!hitB) break;
-      by = thought ? hitB.y + hitB.h + 4 : hitB.y - h - 4;
+      by = best.side === "below" || thought ? hitB.y + hitB.h + 4 : hitB.y - h - 4;
     }
-    by = Math.max(2, Math.min(this.H - h - 2, by));
+    bx = Math.max(2, Math.min(W - w - 2, bx));
+    by = Math.max(2, Math.min(H - h - 2, by));
     placed.push({ x: bx, y: by, w, h });
     ctx.fillStyle = thought ? "rgba(240,234,250,0.96)" : meeting ? "#fff4ef" : "#ffffff";
     ctx.strokeStyle = thought ? "#8b78ad" : meeting ? "#c0432a" : "#1e3a5f";
@@ -607,29 +644,48 @@ export class TownMap {
     rr(ctx, bx, by, w, h, 9);
     ctx.fill();
     ctx.stroke();
-    ctx.setLineDash([]);
-    if (!thought) {
-      // しっぽ
-      const tx = Math.max(bx + 12, Math.min(bx + w - 12, x));
-      const ty = by + h;
+    // しっぽ：吹き出しの縁のうち話し手に近い所から、話し手の方へ短く出す
+    let ax;
+    let ay;
+    if (y >= by + h) {
+      ax = Math.max(bx + 12, Math.min(bx + w - 12, x));
+      ay = by + h;
+    } else if (y <= by) {
+      ax = Math.max(bx + 12, Math.min(bx + w - 12, x));
+      ay = by;
+    } else {
+      ax = x < bx ? bx : bx + w;
+      ay = Math.max(by + 10, Math.min(by + h - 10, y));
+    }
+    const dx = x - ax;
+    const dy = y - ay;
+    const len = Math.hypot(dx, dy) || 1;
+    const reach = Math.max(0, Math.min(12, len - 17));
+    const tipX = ax + (dx / len) * reach;
+    const tipY = ay + (dy / len) * reach;
+    const nx = (-dy / len) * 6;
+    const ny = (dx / len) * 6;
+    if (reach > 2) {
       ctx.beginPath();
-      ctx.moveTo(tx - 6, ty - 1);
-      ctx.lineTo(x, Math.min(y - 14, ty + 10));
-      ctx.lineTo(tx + 6, ty - 1);
+      ctx.moveTo(ax + nx, ay + ny);
+      ctx.lineTo(tipX, tipY);
+      ctx.lineTo(ax - nx, ay - ny);
       ctx.closePath();
       ctx.fill();
       ctx.beginPath();
-      ctx.moveTo(tx - 6, ty);
-      ctx.lineTo(x, Math.min(y - 14, ty + 10));
-      ctx.lineTo(tx + 6, ty);
+      ctx.moveTo(ax + nx, ay + ny);
+      ctx.lineTo(tipX, tipY);
+      ctx.lineTo(ax - nx, ay - ny);
       ctx.stroke();
     }
+    ctx.setLineDash([]);
     ctx.fillStyle = thought ? "#4b3d66" : "#1d2733";
     ctx.textAlign = "left";
     ctx.textBaseline = "top";
     lines.forEach((l, i) => ctx.fillText(l, bx + 9, by + 6 + i * 18));
     ctx.restore();
   }
+
 }
 
 function onSegment(A, B, P) {
