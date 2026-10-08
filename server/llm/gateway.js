@@ -133,6 +133,7 @@ export class LlmGateway {
               maxTokens: rc.max_tokens,
               effort: rc.effort,
               thinking: rc.thinking,
+              timeoutMs: rc.timeout_ms,
               systemTexts: spec.systemTexts,
               userText,
               schema: spec.schema,

@@ -24,7 +24,7 @@ export function scrub(s) {
  * 1回呼ぶ。返り値 { text, usage, stopReason, model, id }。
  * 認証エラーなど続けても無駄なものは FatalLlmError にする。
  */
-export async function callClaude(client, { model, maxTokens, effort, thinking, systemTexts, userText, schema }) {
+export async function callClaude(client, { model, maxTokens, effort, thinking, systemTexts, userText, schema, timeoutMs }) {
   const params = {
     model,
     max_tokens: maxTokens,
@@ -34,7 +34,7 @@ export async function callClaude(client, { model, maxTokens, effort, thinking, s
   };
   if (thinking) params.thinking = thinking;
   try {
-    const res = await client.messages.create(params);
+    const res = await client.messages.create(params, timeoutMs ? { timeout: timeoutMs } : undefined);
     const text = res.content
       .filter((b) => b.type === "text")
       .map((b) => b.text)
