@@ -13,7 +13,8 @@
     "start": "node server/index.js",
     "probe": "node scripts/probe.js",
     "headless": "node scripts/headless.js",
-    "selfcheck": "node scripts/selfcheck.js"
+    "selfcheck": "node scripts/selfcheck.js",
+    "analyze": "node scripts/analyze.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "0.132.1"
